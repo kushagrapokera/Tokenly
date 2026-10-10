@@ -457,17 +457,49 @@ Persist normalized usage and synchronization state.
 
 ### Database Requirements
 
-- [ ] Unique constraints for stable source event IDs.
-- [ ] Indexes on timestamps.
-- [ ] Indexes on provider and model identifiers.
-- [ ] Support upsert operations.
-- [ ] Support schema migrations.
-- [ ] Preserve usage when original session files are deleted.
-- [ ] Support efficient date-range aggregation.
+- [x] Unique constraints for stable source event IDs.
+      → `UNIQUE (platform, source_event_id)`; `message.id` is the stable key
+- [x] Indexes on timestamps. → `ix_usage_events_timestamp`, `ix_usage_events_platform_timestamp`
+- [x] Indexes on provider and model identifiers. → `ix_usage_events_provider_id`, `ix_usage_events_model_id`
+- [x] Support upsert operations. → `upsert_usage_records` via SQLite `ON CONFLICT DO UPDATE`
+- [x] Support schema migrations. → `alembic/versions/0001_initial_create_usage_tables.py`, verified up/down with zero drift
+- [x] Preserve usage when original session files are deleted. → no delete path exists; rows are independent of OpenCode's storage
+- [x] Support efficient date-range aggregation. → verified with `EXPLAIN QUERY PLAN`: all five query shapes use an index
+
+### Schema Notes
+
+Two columns beyond the table above were added for Phase 4's findings, since
+`total_tokens` alone cannot carry the additive categories:
+
+| Column | Purpose |
+|---|---|
+| `reasoning_tokens`, `cache_read_tokens`, `cache_write_tokens` | the additive categories, queryable instead of buried in JSON |
+| `consumption_tokens` | true total: input + output + reasoning + cache |
+
+Two `CHECK` constraints guard the data the normalizer promises: token counts must be
+nonnegative, and `usage_status` must be one of the three known values. A row violating
+either is rejected by the database rather than trusted.
+
+### Implementation
+
+| File | Concern |
+|---|---|
+| `database/types.py` | `UtcDateTime` — SQLite returns naive datetimes, so values are pinned to UTC on write and re-tagged on read |
+| `database/models.py` | ORM models, constraints, indexes |
+| `database/repository.py` | idempotent upsert, filtered queries, token sums |
+| `database/state.py` | per-platform checkpoint storage |
+
+`created_at` is excluded from the update set, so re-importing a record refreshes the
+usage without moving the original import time. `mark_scanning` and `mark_error` change
+only the status: a failed scan must not clear the checkpoint, or the retry would skip the
+window it never finished.
 
 ### Completion Criteria
 
 Usage records can be stored, queried, and updated without duplicates.
+→ **Verified**: importing 1,871 live records twice produced 1,871 rows and an unchanged
+total; a subsequent re-sync matched the collector exactly on every column. Five
+re-imports of one record leave one row. 34 database tests.
 
 ---
 
