@@ -360,15 +360,37 @@ This is an illustrative internal schema.
 
 ### Normalization Rules
 
-1. Preserve the original provider and model identifiers.
-2. Normalize timestamps to UTC.
-3. Use nonnegative integer token counts.
-4. Represent unavailable values as `null`.
-5. Distinguish reported usage from estimated usage.
-6. Determine whether cached tokens overlap with input tokens.
-7. Determine whether reasoning tokens overlap with output tokens.
-8. Prevent overlapping categories from being counted twice.
-9. Preserve raw token metadata where useful for future compatibility.
+1. [x] Preserve the original provider and model identifiers. → passed through untouched
+2. [x] Normalize timestamps to UTC. → `normalize_timestamp`
+3. [x] Use nonnegative integer token counts. → `read_count` rejects negatives, bools, floats
+4. [x] Represent unavailable values as `null`. → `None` throughout; zero is kept as zero
+5. [x] Distinguish reported usage from estimated usage. → `resolve_usage_status`
+6. [x] Determine whether cached tokens overlap with input tokens. → **additive**, see below
+7. [x] Determine whether reasoning tokens overlap with output tokens. → **additive**, see below
+8. [x] Prevent overlapping categories from being counted twice. → `sum_every_category`
+9. [x] Preserve raw token metadata where useful for future compatibility. → `raw_usage`
+
+### Overlap Finding (rules 6, 7, 8)
+
+Measured against 1,748 live OpenCode messages, the identity
+
+```text
+total == input + output + reasoning + cache.read + cache.write
+```
+
+held on **1,415 of 1,415** records that carried a total. Were cache a subset of input,
+OpenCode would not have added it again — so on OpenCode both categories are **additive**,
+not overlapping.
+
+Consequence: `total_tokens = input + output` (9.39M) is the per-call figure, while
+`consumption_tokens` adds reasoning and cache (138.2M). Reporting only the former would
+undercount real consumption roughly 14x. `consumption_tokens` independently reproduces
+OpenCode's own reported total on 1,435 of 1,435 records.
+
+The relationship is data, not an assumption: it lives in `normalization/categories.py`
+as `CategoryRelationships`, so a future provider with different semantics declares its
+own instead of inheriting OpenCode's. `tests/test_normalization_learning.py` fails if
+the relationship stops holding against real data.
 
 ### Total Token Calculation
 
@@ -378,13 +400,21 @@ For records where input and output are complete and non-overlapping:
 total_tokens = input_tokens + output_tokens
 ```
 
-If the source reports other categories separately, first establish their relationship to input and output.
+If the source reports other categories separately, first establish their relationship to
+input and output. → established above as additive, so secondary categories are excluded
+from `total_tokens` and reported through `consumption_tokens`.
 
-Do not invent missing token values.
+Do not invent missing token values. → a total is emitted only when every category it
+sums is known; a partial sum is reported as unknown, never as a smaller number.
 
 ### Completion Criteria
 
-All supported OpenCode usage records are converted into a consistent schema without token double counting.
+All supported OpenCode usage records are converted into a consistent schema without token
+double counting. → **Verified**: 1,795 live records, every `total_tokens` equal to its
+input + output, every `consumption_tokens` equal to the sum of all five categories, and
+per-category totals reconcile with `opencode stats` (input 8,884,730 vs 8.9M; output
+506,344 vs 506.3K; cache read 128,423,097 vs 128.4M). 37 normalization tests, 10 of them
+learning tests against real data.
 
 ---
 
