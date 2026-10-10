@@ -4,6 +4,10 @@ from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
 
+# Importing the models registers them on Base.metadata, which is what autogenerate
+# compares the database against. Without this, metadata is empty and every table looks
+# like it is missing.
+import database.models  # noqa: F401  (imported for its side effect on metadata)
 from alembic import context
 from config.settings import get_settings
 from database.connection import Base
