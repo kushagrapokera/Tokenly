@@ -18,7 +18,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from collectors.base import BaseCollector
+from collectors.base import BaseCollector, ScanOutcome
 from collectors.checkpoint import Checkpoint
 from collectors.opencode.extractor import PLATFORM, extract_usage_record
 from collectors.opencode.locator import require_database_path, resolve_database_path
@@ -110,6 +110,34 @@ class OpenCodeCollector(BaseCollector):
         else:
             logger.info("collecting opencode updates since %s", resume_from.to_datetime())
         return list(self._iter_records(checkpoint=resume_from))
+
+    def collect_scan(self, checkpoint: str | None = None) -> ScanOutcome:
+        """Collect completed records and report which messages are still generating.
+
+        OpenCode writes a message row when generation starts and fills in its tokens when
+        it finishes. Reporting those rows lets a caller hold its checkpoint back instead
+        of stepping over usage that has not landed yet.
+        """
+        resume_from = Checkpoint.parse(checkpoint)
+        if resume_from is not None:
+            logger.info("scanning opencode since %s", resume_from.to_datetime())
+
+        records: list[UsageRecord] = []
+        pending: list[int] = []
+        database_path = require_database_path(self._settings)
+        with self._snapshot_connection(database_path) as connection:
+            for row in iter_assistant_messages(connection):
+                if resume_from is not None and resume_from.covers(row.time_created_ms):
+                    continue
+                record = self._extract(row)
+                if record is None:
+                    pending.append(row.time_created_ms)
+                    continue
+                records.append(record)
+
+        if pending:
+            logger.debug("%d opencode messages are still generating", len(pending))
+        return ScanOutcome(records=records, pending_timestamps_ms=pending)
 
     @contextmanager
     def _snapshot_connection(self, database_path: Path) -> Iterator[sqlite3.Connection]:
