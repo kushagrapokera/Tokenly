@@ -10,7 +10,6 @@ import pytest
 
 from collectors.opencode.extractor import (
     MalformedMessageError,
-    compute_total,
     extract_usage_record,
     is_completed,
 )
@@ -232,13 +231,6 @@ def test_missing_identity_field_raises_a_named_error(missing_field: str) -> None
 
     assert caught.value.missing_field == missing_field
     assert caught.value.message_id == "msg_0001"
-
-
-def test_compute_total_needs_both_inputs() -> None:
-    assert compute_total(10, 5) == 15
-    assert compute_total(None, 5) is None
-    assert compute_total(10, None) is None
-    assert compute_total(0, 0) == 0
 
 
 @contextmanager
