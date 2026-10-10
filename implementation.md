@@ -511,49 +511,58 @@ Prevent incorrect totals and support automatic updates.
 
 ### Deduplication Requirements
 
-- Identify usage events using stable source identifiers.
-- Avoid counting the same message repeatedly.
-- Handle updates to existing usage records.
-- Handle streaming partial usage.
-- Handle retries.
-- Handle session compaction.
-- Distinguish individual usage events from cumulative counters.
-
-### Synchronization Workflow
-
-```text
-Read OpenCode Records
-        |
-        v
-Extract Usage Events
-        |
-        v
-Normalize Events
-        |
-        v
-Check Existing Records
-        |
-        v
-Insert or Update
-        |
-        v
-Update Sync Checkpoint
-```
+- [x] Identify usage events using stable source identifiers.
+      → `source_event_id` = OpenCode `message.id`, unique per platform
+- [x] Avoid counting the same message repeatedly.
+      → `UNIQUE (platform, source_event_id)` plus upsert; 10 repeat runs add nothing
+- [x] Handle updates to existing usage records.
+      → upsert refreshes counts, never `created_at`
+- [x] Handle streaming partial usage.
+      → a message with no `time.completed` is reported as pending and holds the checkpoint
+- [x] Handle retries. → a re-sent message updates its row; verified in `test_a_retried_message_updates_its_row_instead_of_adding_one`
+- [x] Handle session compaction. → no delete path exists; stored usage survives an emptied source
+- [x] Distinguish individual usage events from cumulative counters.
+      → tokens come from `message.data`, never from `part` step-finish rollups or `session` columns
 
 ### Tasks
 
-- [ ] Implement initial historical scan.
-- [ ] Implement incremental scanning.
-- [ ] Implement event upserts.
-- [ ] Implement synchronization checkpoints.
-- [ ] Implement recovery after interrupted scans.
-- [ ] Implement reconciliation after application restart.
-- [ ] Implement filesystem monitoring where appropriate.
-- [ ] Add periodic rescan fallback.
+- [x] Implement initial historical scan. → no stored checkpoint reads everything
+- [x] Implement incremental scanning. → resumes from the stored checkpoint
+- [x] Implement event upserts. → reuses Phase 5 `upsert_usage_records`
+- [x] Implement synchronization checkpoints. → `database/state.py`, advanced only after a successful store
+- [x] Implement recovery after interrupted scans. → status `scanning`/`error` detected on restart; failed scan leaves the checkpoint untouched
+- [x] Implement reconciliation after application restart. → fresh service re-reads from the checkpoint; upsert absorbs the overlap
+- [ ] Implement filesystem monitoring where appropriate. → deferred; OpenCode is already running as this process, so a poll-on-demand model is simpler and sufficient
+- [x] Add periodic rescan fallback. → `rescan_overlap_ms` pulls the resume point back, re-reading a recent window
+
+### The Three Guards
+
+Correctness here rests on three rules, each enforced in code:
+
+1. **Checkpoint advances only after records are committed.** A crash in between leaves a
+   stale checkpoint, which causes harmless re-reads; advancing first would skip usage
+   permanently.
+2. **An in-flight message holds the checkpoint back.** OpenCode writes a message when
+   generation starts and fills in tokens when it finishes, so the checkpoint is capped at
+   the oldest unfinished message.
+3. **Nothing is deleted.** Compaction and retries remove source rows; usage stays.
+
+### Implementation
+
+| File | Concern |
+|---|---|
+| `collectors/base.py` | `ScanOutcome` — records plus the timestamps of messages still generating |
+| `collectors/opencode/collector.py` | `collect_scan` reports in-flight messages |
+| `sync/service.py` | orchestration, checkpoint arithmetic, failure handling |
+| `sync/result.py` | what a run did |
 
 ### Completion Criteria
 
 Repeated scans and application restarts do not inflate usage totals.
+→ **Verified**: five consecutive runs against the live database produced identical
+`(row count, total)` every time — `(1915, 158,041,747)` — and a simulated full restart
+added nothing. Earlier runs did grow, traced to genuinely new usage from the running
+OpenCode session, not duplication. 35 sync tests.
 
 ---
 
