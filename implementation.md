@@ -187,17 +187,17 @@ Create the backend foundation.
 
 ### Tasks
 
-- [ ] Initialize a Python project.
-- [ ] Configure a virtual environment.
-- [ ] Install FastAPI and Uvicorn.
-- [ ] Install SQLAlchemy and Alembic.
-- [ ] Configure SQLite.
-- [ ] Configure logging.
-- [ ] Configure application settings.
-- [ ] Create a collector interface.
-- [ ] Configure Pytest.
-- [ ] Add type hints and code formatting.
-- [ ] Add a health-check endpoint.
+- [x] Initialize a Python project. → root `pyproject.toml` + `requirements.txt` + `requirements-dev.txt`
+- [x] Configure a virtual environment. → `.venv/` (Python 3.14, git-ignored)
+- [x] Install FastAPI and Uvicorn. → fastapi 0.143.0, uvicorn 0.54.0
+- [x] Install SQLAlchemy and Alembic. → sqlalchemy 2.1.4, alembic 1.20.0
+- [x] Configure SQLite. → `config/settings.py` (`data/tokenly.db`) + `database/connection.py`
+- [x] Configure logging. → `logging_setup/configure.py`, one console handler, level from settings
+- [x] Configure application settings. → `config/settings.py` (pydantic-settings, `.env` aware, `extra="ignore"`)
+- [x] Create a collector interface. → `collectors/base.py` (`BaseCollector` ABC) + `schemas/usage.py`
+- [x] Configure Pytest. → `tests/` + `[tool.pytest.ini_options]`; 11 tests green
+- [x] Add type hints and code formatting. → mypy strict clean (22 files), ruff check + format clean
+- [x] Add a health-check endpoint. → `GET /api/health` in `routes/health.py` (200 ok / 503 when DB unreachable)
 
 ### Proposed Directory Structure
 
@@ -245,8 +245,8 @@ Create a common interface for future platform integrations.
 ```python
 from abc import ABC, abstractmethod
 
-class BaseCollector(ABC):
 
+class BaseCollector(ABC):
     @abstractmethod
     def discover(self):
         pass
@@ -264,7 +264,6 @@ class BaseCollector(ABC):
 
 ```python
 class OpenCodeCollector(BaseCollector):
-
     def discover(self):
         pass
 
@@ -279,34 +278,57 @@ These are interface placeholders, not completed implementations.
 
 ### Tasks
 
-- [ ] Implement OpenCode data directory discovery.
-- [ ] Implement storage format detection.
-- [ ] Implement session enumeration.
-- [ ] Implement message and usage extraction.
-- [ ] Extract provider IDs.
-- [ ] Extract model IDs.
-- [ ] Extract input tokens.
-- [ ] Extract output tokens.
-- [ ] Extract timestamps.
-- [ ] Extract stable event identifiers.
-- [ ] Handle missing usage metadata.
-- [ ] Handle corrupted or incomplete records.
-- [ ] Support historical imports.
-- [ ] Support incremental collection.
+- [x] Implement OpenCode data directory discovery. → `collectors/opencode/locator.py` (CLI-first, XDG/Windows fallback, logged)
+- [x] Implement storage format detection. → `collectors/opencode/reader.py` (`verify_supported_schema`, `UnsupportedStorageFormatError`)
+- [x] Implement session enumeration. → `collectors/opencode/reader.py` (`list_sessions`)
+- [x] Implement message and usage extraction. → `collectors/opencode/extractor.py`
+- [x] Extract provider IDs. → `data.providerID` (`require_text`)
+- [x] Extract model IDs. → `data.modelID`; `variant` kept as metadata, not identity
+- [x] Extract input tokens. → `tokens.input`
+- [x] Extract output tokens. → `tokens.output`
+- [x] Extract timestamps. → `data.time.created` (ms → UTC), column as fallback
+- [x] Extract stable event identifiers. → `message.id` as `source_event_id`
+- [x] Handle missing usage metadata. → `usage_status="unavailable"`, counts `None` (never 0)
+- [x] Handle corrupted or incomplete records. → `json_valid` SQL guard + per-row skip + named errors
+- [x] Support historical imports. → `collect_history()`
+- [x] Support incremental collection. → `collect_updates()` + `collectors/checkpoint.py`
+
+### Findings That Shaped the Implementation
+
+Verified against the live database (OpenCode 1.18.35), beyond the Phase 1 document:
+
+1. **`tokens.total` is not `input + output`.** 1,258 of 1,271 rows with a total matched
+   `input + output + reasoning + cache.read`. Totals are therefore always computed from
+   the two non-overlapping counts; the reported total is preserved in `raw_usage`.
+2. **A message can be mid-generation.** One assistant message currently has no
+   `time.completed`; it is deferred, and the checkpoint re-reads its millisecond so the
+   finished record is picked up on the next scan.
+3. **`APIError` exists alongside `MessageAbortedError`.** The Phase 1 doc listed only the
+   latter; both are preserved in `raw_usage["error"]`.
+4. **`json_extract` raises on malformed JSON.** A corrupt `data` column aborts the whole
+   scan, so the reader guards with `json_valid(data)` first.
+5. **`opencode debug paths` uses space-aligned columns**, not tabs. All three plausible
+   formats are handled and tested.
 
 ### Important Requirements
 
 The collector must:
 
-- Never modify OpenCode's source data.
-- Never read or store API keys.
-- Never require an API proxy.
-- Never depend on model pricing.
-- Never assume all providers expose complete usage metadata.
+- Never modify OpenCode's source data. → opened `mode=ro`, read through a SQLite online
+  backup into a temp dir that is deleted afterwards; asserted byte-for-byte in tests
+- Never read or store API keys. → only token/model/time/status fields are extracted
+- Never require an API proxy. → pure local file reads
+- Never depend on model pricing. → `cost` is never read
+- Never assume all providers expose complete usage metadata. → no provider allow-list;
+  any `providerID` is handled uniformly
 
 ### Completion Criteria
 
 The collector successfully extracts normalized usage candidates from real OpenCode sessions.
+→ **Verified**: 1,713 records from 27 live sessions, ids unique, totals equal
+input + output on every row, and per-model sums reconcile with `opencode stats`
+(8,868,237 input vs 8.9M; 482,162 output vs 482.5K). 22 learning tests in
+`tests/collectors/opencode/test_learning_tests.py` pin the boundary shapes.
 
 ---
 
