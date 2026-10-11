@@ -1,7 +1,8 @@
 # Parallelism.md — making collection fast, and keeping it fast as platforms are added
 
-**Status:** A0–A3 are implemented and measured (see §1 and §13). All of phase B
-is still plan, and is gated on re-measuring first.
+**Status:** phase A (A0–A3) is implemented and measured (see §1 and §13). **Phase B
+is held** at the owner's direction as of 2026-10-12 — see §13, where the decision,
+its reasoning, and the conditions that would reopen it are recorded.
 
 **Scope:** how collection and storage of usage records gets faster today, and how
 the same design keeps working when Claude, Codex, Antigravity and others are
@@ -524,7 +525,12 @@ plausible, wrong numbers. The edge search stays exact.
 Also measure `orjson` as a drop-in for the ~200 ms of JSON parsing, but do not
 adopt it without a measurement.
 
-### Phase B — parallel collection
+### Phase B — parallel collection — **HELD**
+
+> **Held on 2026-10-12 at the owner's direction.** Not abandoned: the design below
+> is ready and nothing about it has been disproved. It is on hold because the gate
+> said so, not because it is hard or wrong. Reopen it when the conditions at the end
+> of this section are met, or whenever the owner says so.
 
 **Scope: Cline only.** After phase A, OpenCode's remaining cost is almost
 entirely variable-but-tiny (§1), and its sessions are 0.1 ms each. Batching it
@@ -546,11 +552,41 @@ single-file SQLite source. The trigger to revisit is *a future platform with one
 large database where measurement shows sharding helps* — and expect both to be
 needed together when that day comes (§4.3).
 
-**Gate between A and B — now due.** Phase A is complete. Re-run the benchmark
-before starting B. On today's numbers B would apply to Cline alone, for ~31% of a
-144 ms collection step (~59 ms), while a full pass is already down to ~250 ms. The
-honest read is that B is insurance against growth rather than a fix for anything
-felt now, and it should be built only if the measurements still call for it.
+#### The gate, and how it came out
+
+Phase A is complete and measured on the live stores. The gate said to re-run the
+benchmark before starting B, so here is what it says:
+
+| | Before phase 9 | After A0–A3 |
+|---|---:|---:|
+| Collect OpenCode | 836 ms | **65 ms** |
+| Collect Cline | 144 ms | **139 ms** |
+| **Collection, both platforms** | **948 ms** | **206 ms** |
+
+B would apply to Cline alone — OpenCode is not worth batching (§4.3) — and would
+take roughly 31% of a 139 ms step, which is **about 43 ms**. Against a full pass
+already at 206 ms, running every five minutes, that is a gain of a few
+milliseconds per pass and a permanent cost: a process pool, a batching contract on
+the collector interface, a single-writer commit barrier, and a conformance suite
+to keep it honest.
+
+Phase A removed 742 ms of fixed cost with no new machinery. B would add real
+machinery for 43 ms of variable cost. **The measurements said stop, so it is
+held.**
+
+**What would reopen it.** Any one of these, re-measured rather than assumed:
+
+- A full collection pass rising past roughly a second again — for instance if a
+  future platform's store grows large enough that scanning it dominates.
+- Cline's history growing several times over, so its per-scan parse cost stops
+  being small.
+- A new platform with many independent units — more platforms make a flat work
+  queue pay off where two do not.
+- The sync interval dropping to seconds, which turns per-pass cost from a rounding
+  error into something continuous.
+
+Until one of those is true, the honest position is that B is insurance against
+growth, not a fix for a problem being felt now.
 
 ---
 
@@ -648,6 +684,9 @@ grow, not about fixing today's numbers.
 
 ## 17. Open questions to settle during implementation
 
+Questions 1–3 belong to phase A and are settled. Questions 4–7 belong to phase B
+and are parked with it (§13).
+
 1. ~~A0 cache lifetime: per process, or TTL?~~ Settled: process lifetime, since
    the app is a long-lived local process and a restart costs one probe. Only
    successful answers are cached; a re-probe happens when the cached path stops
@@ -656,8 +695,13 @@ grow, not about fixing today's numbers.
 2. ~~Should OpenCode be batched too?~~ Settled: no. Measured at 0.1 ms of
    parsing per session, worth ~8 ms across four workers, and it would require
    snapshot sharing that no current platform needs (§4.3).
-3. A1: is `INSERT … ON CONFLICT` available on every SQLite the project must
-   support, and what is the fallback if not?
+3. ~~A1: is `INSERT … ON CONFLICT` available on every SQLite the project must
+   support, and what is the fallback if not?~~ Settled: available since SQLite
+   3.24 (2018) and required only by the batched path; a version check selects the
+   row-at-a-time path otherwise, and both are tested for identical results.
+
+**Parked with phase B** — to be answered when B is reopened, not before:
+
 4. B2: is `min(4, cpu_count − 1)` right, or should it scale with batch count?
 5. B6: what is the real N-platform curve, measured rather than projected?
 6. If the interval drops to ~30 s, does the snapshot rule (A2) still need to

@@ -413,8 +413,18 @@ drop from five minutes to about one, without changing what is stored.
   scanned every bucket edge from the start, once per row. A binary search over the
   same edges brought it to **8.2 ms**, with buckets identical before and after,
   including across daylight-saving transitions.
-- **Phase B** — parallel collection across Cline's batches, last, and only if the
-  measurements still justify it after the above.
+- **Phase B — held.** Parallel collection across Cline's batches. Held on
+  2026-10-12 at the owner's direction, after the gate came out against it: with
+  phase A complete a full collection pass costs 206 ms, and B would save about
+  43 ms of that — in exchange for a process pool, a batching contract, a
+  single-writer commit barrier and a conformance suite, permanently. The design
+  is ready and nothing in it has been disproved; the conditions that would
+  reopen it are recorded in `parallelism.md` §13.
+
+**Where phase 9 leaves things.** Collection, both platforms, measured on the live
+stores: **948 ms → 206 ms**. Status view when idle: **759 ms → 7 ms**. Re-importing
+5,053 records: **~2,600 ms → 169 ms**. None of it needed parallelism — phase A
+removed fixed per-scan cost, which is what actually dominated.
 
 ## 13. Implementation Priority
 
@@ -431,7 +441,7 @@ drop from five minutes to about one, without changing what is stored.
 | P1 | API platform support | Reuse / extend |
 | P1 | Dashboard platform support | Reuse / extend |
 | P0 | Cline and OpenCode regression tests | Extend |
-| P1 | Collection performance | Plan in [`parallelism.md`](parallelism.md) |
+| P1 | Collection performance | Phase A done; phase B held — [`parallelism.md`](parallelism.md) |
 
 ## 14. Definition of Done
 
