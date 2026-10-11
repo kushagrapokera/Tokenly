@@ -23,14 +23,28 @@ Median of 5 runs, warm page cache, 4,700 stored records (2,603 OpenCode + 2,142 
 | ↳ `opencode debug paths` subprocess | ~597 ms | **71% of it** — runs on *every* scan |
 | ↳ snapshot copy of the live database | ~172 ms | a full copy, every scan |
 | ↳ indexed SQL query | 11 ms | `message_session_time_created_id_idx` already exists |
-| ↳ `json.loads` + normalize in Python | ~100 ms | |
+| ↳ row decode + model construction | ~40 ms | *variable* — the only part batching could touch |
+| ↳ `json.loads` | ~11 ms | 29 sessions, median 0.1 ms each |
 | **Cline `collect_history()`** | **144 ms** | |
-| ↳ read + `json.loads` of 42 session files | ~100 ms | |
+| ↳ read + `json.loads` of 42 session files | ~100 ms | *variable* — 42 independent files |
 | ↳ normalize in Python | ~33 ms | |
 | **Sequential total** | **948 ms** | |
 | Write: first import, 2,142 rows | 174 ms | one transaction |
 | Write: re-import 2,142 existing rows | **1,125 ms** | one `UPDATE` per row |
 | Dashboard `summary` / `breakdown` / `timeline` | 1.3 / 2.4 / 43 ms | |
+
+**Fixed versus variable — the distinction the whole plan turns on:**
+
+| Platform | Fixed per scan | Variable per scan | What that means |
+|---|---:|---:|---|
+| OpenCode | ~769 ms (subprocess + snapshot) | ~51 ms | Batching can only touch the 51 ms |
+| Cline | ~0 ms | ~144 ms | Batching is the only lever here |
+
+OpenCode's cost is almost entirely *fixed*: one subprocess and one database copy,
+per scan, regardless of how many records exist. A0 and A2 delete that fixed cost
+outright. Spreading ~51 ms of variable work across four workers would save about
+8 ms. **Batching OpenCode is not worth doing, and phase B should skip it** — see
+§13 and the note in B5.
 
 Three things follow, and they reframe the whole problem:
 
@@ -56,6 +70,7 @@ and it should not be reached for before phase A.
 | Two collectors in **processes** | 948 ms | 842 ms | −11% |
 | Cline's 42 files across **4 threads** | 124 ms | 134 ms | **worse** |
 | Cline's 42 files across **4 processes** | 124 ms | 85 ms | −31% |
+| OpenCode's 29 sessions across 4 processes | ~51 ms variable | ~13 ms | −38% of 4% of the scan |
 
 Three consequences shape the design:
 
@@ -65,8 +80,10 @@ Three consequences shape the design:
 - **Threads do not work.** `json.loads` and model construction hold the GIL; four
   threads measuring *slower* than one is the expected result, and it was
   observed. Only processes help. (One exception noted in §8.)
-- **The parallelism that pays is inside a collector**, where units are genuinely
-  independent: Cline has 42 session files, OpenCode has 29 indexed sessions.
+- **The parallelism that pays is inside Cline**, whose 42 session files are
+  genuinely independent and carry ~144 ms of variable work. OpenCode's 29
+  indexed sessions are technically batchable too, but at 0.1 ms of parsing each
+  they are not worth it — see §4.3.
 
 ---
 
@@ -158,9 +175,10 @@ def iter_batches(self, checkpoint: str | None = None) -> list[CollectorBatch]:
 ```
 
 This is the compatibility hinge. OpenCode and Cline keep working with **zero
-changes** on day one; each opts in later by overriding one method.
+changes** on day one; each opts in later by overriding one method. As measured,
+**Cline is the only platform expected to override it** — see §4.3.
 
-### 4.3 Overriding it, per platform
+### 4.3 Overriding it — Cline only, for now
 
 ```python
 # collectors/cline/collector.py — 42 independent files become 42 batches
@@ -171,21 +189,26 @@ def iter_batches(self, checkpoint=None) -> list[CollectorBatch]:
     ]
 ```
 
-```python
-# collectors/opencode/collector.py — 29 indexed sessions become 29 batches
-# message_session_time_created_id_idx on (session_id, time_created, id) means a
-# per-session query is an index range scan, not a table scan.
-def iter_batches(self, checkpoint=None) -> list[CollectorBatch]:
-    with self._snapshot_connection(...) as connection:
-        return [
-            CollectorBatch(key=session.session_id, collect=partial(self._batch, session.session_id))
-            for session in list_sessions(connection)
-        ]
-```
+**OpenCode does not override this.** Its sessions are 0.1 ms of parsing each
+(§1), so sharding them would save roughly 8 ms while costing pool overhead. It
+keeps the default single-batch implementation and is scanned sequentially.
 
-Verified: **8 processes reading one read-only snapshot concurrently all returned
-identical results**, so sharing a snapshot across workers is safe. Each worker
-opens its own `mode=ro` connection.
+This matters more than it looks, because batching OpenCode would be actively
+harmful. `collect_scan` and `_iter_records` each take their own snapshot
+(`collectors/opencode/collector.py:128` and `:155`), so 29 batches would mean 29
+full copies of the live database — about 5 seconds. Two ways avoid that, and
+neither is needed once OpenCode stays unbatched:
+
+1. **Share one snapshot across batches.** Workers open their own `mode=ro`
+   connection to a snapshot the parent already took. Verified safe: 8 processes
+   reading one read-only snapshot concurrently returned identical results.
+2. **Land A2 first**, so the snapshot cache makes repeated copies nearly free.
+
+Both are **deferred, not rejected.** They exist only to shard a *single-file
+SQLite source*, and no current platform needs that: Cline's 42 units are separate
+files, each read on its own. If a future platform has one large database worth
+sharding, and measurement shows sharding it helps, revisit these — and expect to
+need both.
 
 ---
 
@@ -253,7 +276,18 @@ batches may complete in any order without changing what gets stored. This
 invariance is what makes parallelism safe; it is pinned by existing tests and
 must keep passing.
 
-**6.4 Idempotence absorbs the rest.** Re-running is safe because the upsert
+**6.4 Pending messages must be gathered per batch, not per scan.** Cline's
+`collect_scan` always returns `pending_timestamps_ms=[]`, because its messages
+arrive complete. OpenCode's does not: it appends the timestamp of every message
+still generating (`collectors/opencode/collector.py:134`), and `SyncService`
+holds the checkpoint back for exactly those. A batched scan must collect that
+list **per batch and merge it**, or §6.2 will advance past a message whose usage
+has not landed. The merged `ScanOutcome` already carries a flat list, so the
+merge is trivial — but it has to be done deliberately, because OpenCode is the
+platform that is *not* batched and a Cline-only implementation would look
+correct until OpenCode is ever switched on.
+
+**6.5 Idempotence absorbs the rest.** Re-running is safe because the upsert
 updates in place. A worker that dies mid-scan costs re-read time, never double
 counting.
 
@@ -340,7 +374,9 @@ Adding a provider must require **only** the collector contract. Nothing in
 
 1. `platform`, `discover()`, `collect_history()`, `collect_updates()` — as today.
 2. Optionally override `iter_batches()` to be parallelised. **Optional.** A
-   collector that does not override it still works, just as one batch.
+   collector that does not override it still works, just as one batch. Cline is
+   the only current platform that overrides it; a new one inherits a working
+   sequential path for free.
 3. Register it in `collectors/registry.py`. One line.
 
 It must **not** need to know about: workers, queues, snapshots, checkpoints,
@@ -372,10 +408,10 @@ editing the executor, this design has leaked and should be corrected.
 | `main.py` | create/shutdown the pool in the lifespan | Low |
 | `config/settings.py` | `sync_max_workers`, `sync_parallel: bool` | None |
 | `collectors/cline/collector.py` | override `iter_batches()` (opt-in) | Medium — must equal today's output |
-| `collectors/opencode/collector.py` | override `iter_batches()` (opt-in) | Medium — as above |
-| `collectors/opencode/reader.py` | per-session message query | Low |
 
 No file is deleted, renamed, or restructured. No new dependency is added.
+**`collectors/opencode/` is not touched at all** — it keeps the default
+single-batch implementation (§4.3).
 
 ---
 
@@ -392,6 +428,10 @@ any of them.
 | A1 | Replace the per-row `UPDATE` loop with one bulk `INSERT … ON CONFLICT DO UPDATE` | 1,125 → ~60 ms | Needs SQLite ≥ 3.24 (2018). Must preserve `UpsertResult` counts. |
 | A2 | Skip the snapshot when the live DB is unchanged (`mtime`, `size`) | −172 ms per no-change scan | A stale snapshot must never skip new messages; the timestamp checkpoint makes this safe, and needs a test proving it. |
 | A3 | Timeline: select columns instead of ORM entities | 43 → ~8 ms | Low |
+
+**A2 is worth doing on its own merits**, independent of any parallelism. It
+attacks a *fixed* per-scan cost in the sequential world (§1), where batching
+cannot reach it at all.
 
 #### A0 — the rules, and why each one
 
@@ -430,14 +470,25 @@ adopt it without a measurement.
 
 ### Phase B — parallel collection
 
+**Scope: Cline only.** After phase A, OpenCode's remaining cost is almost
+entirely variable-but-tiny (§1), and its sessions are 0.1 ms each. Batching it
+would save ~8 ms and would need snapshot-sharing machinery that no current
+platform requires (§4.3).
+
 | # | Change |
 |---|---|
 | B1 | `CollectorBatch` + `iter_batches()` default in `collectors/base.py` |
 | B2 | `sync/executor.py` — persistent process pool, longest-batch-first |
 | B3 | `outcome=` keyword on `SyncService.run` |
 | B4 | Coordinator batching path |
-| B5 | Per-platform overrides (Cline, then OpenCode); measure peak RSS |
+| B5 | Cline override only; measure peak RSS and confirm the gain is real |
 | B6 | Conformance suite: a fake third platform, plus the N-platform projections in §3 |
+
+**Deferred, recorded so it is not rediscovered painfully:** sharing one snapshot
+across batches, and any OpenCode override. Both exist only to shard a
+single-file SQLite source. The trigger to revisit is *a future platform with one
+large database where measurement shows sharding helps* — and expect both to be
+needed together when that day comes (§4.3).
 
 **Gate between A and B.** After A, re-run the benchmark. If collection is already
 comfortably fast for real usage, stop — phase B is insurance against growth, not
@@ -453,6 +504,7 @@ it.
 | Parallel output equals sequential output | Same fixture, both paths, byte-identical record sets |
 | A failed batch never advances the checkpoint | Injected batch failure; assert the resume point and that a later scan recovers the records |
 | Order does not matter | Shuffle batch completion order; assert identical storage |
+| Pending messages survive batching | A batch reporting an in-flight message holds the checkpoint back, exactly as the sequential scan does (§6.4) |
 | Re-running never inflates | Existing idempotence tests, re-run under the executor |
 | A pool that cannot start still collects | Force pool construction to fail; assert sequential fallback |
 | A new platform needs no `sync/` changes | The conformance suite in §11 |
@@ -478,9 +530,10 @@ it.
 | Checkpoint written before records commit | Ordering unchanged from today's `SyncService`; the commit stays where it is |
 | Pool leaks processes across restarts | Created in lifespan, shut down on exit |
 | Worker crashes take down the scan | Caught per batch; recorded as a failed batch, surfaced in collector status |
-| Fork + SQLite connection inheritance | Workers open their **own** `mode=ro` connection to a snapshot, never the live file |
+| Fork + SQLite connection inheritance | Workers open their **own** `mode=ro` connection to a snapshot, never the live file. Cline's batches read separate files, so this does not arise today (§4.3) |
 | Parallelism stealing CPU from the user | 4 workers on 8 cores, overridable, with sequential fallback. The machine belongs to the user (§9) |
 | A0 caches a stale path after the user moves their config | Re-probe when the cached path stops holding the DB, and on manual rescan; successes only, never failures |
+| Batching OpenCode, if ever attempted, takes 29 snapshots | Deferred by decision (§4.3), not by oversight. If revisited, snapshot sharing must land first |
 
 ---
 
@@ -507,18 +560,27 @@ are minutes stale is not doing its job.
 
 | | Today | After A | After A + B |
 |---|---:|---:|---:|
-| Cost of one full scan | ~948 ms | ~250 ms | ~200 ms |
+| OpenCode, fixed cost | ~769 ms | ~0 ms | ~0 ms |
+| OpenCode, variable | ~51 ms | ~51 ms | ~51 ms |
+| Cline | ~144 ms | ~144 ms | ~85 ms |
+| **Cost of one full scan** | **~948 ms** | **~250 ms** | **~200 ms** |
 | Interval affordable at the same background cost | 5 min | ~1 min | ~30 s |
 | Share of one core, continuously | 0.3% | 0.08% | 0.07% |
+
+Note the shape: phase A removes **all** of OpenCode's fixed cost, because that
+cost is one subprocess and one database copy, neither of which depends on how
+many records exist. Phase B then attacks the only substantial variable cost left
+— Cline's 144 ms — and OpenCode's 51 ms is not worth the machinery (§4.3).
 
 So the payoff of A is not "the dashboard loads faster". It is that **the same
 background cost buys five to ten times more frequent syncing**, which is the
 thing a local tracker actually wants.
 
-Honest caveat: the parallel ceiling measured today is −31% on collection, and
-almost all of that comes from Cline's 42 independent files. **Phase A delivers
-more than phase B does**, for a fraction of the risk. Phase B is about staying
-fast as platforms and history grow, not about fixing today's numbers.
+Honest caveat: the parallel ceiling measured today is −31% on Cline's collection
+and roughly nothing elsewhere, because OpenCode's sessions are 0.1 ms each and
+its real cost is fixed. **Phase A delivers more than phase B does**, for a
+fraction of the risk. Phase B is about staying fast as platforms and history
+grow, not about fixing today's numbers.
 
 ---
 
@@ -529,9 +591,15 @@ fast as platforms and history grow, not about fixing today's numbers.
    successful answers are cached; a re-probe happens when the cached path stops
    holding `opencode.db`, and on manual rescan. The TTL experiment was dropped
    because it buys nothing measurable and adds invalidation to reason about.
-2. A1: is `INSERT … ON CONFLICT` available on every SQLite the project must
+2. ~~Should OpenCode be batched too?~~ Settled: no. Measured at 0.1 ms of
+   parsing per session, worth ~8 ms across four workers, and it would require
+   snapshot sharing that no current platform needs (§4.3).
+3. A1: is `INSERT … ON CONFLICT` available on every SQLite the project must
    support, and what is the fallback if not?
-3. B2: is `min(4, cpu_count − 1)` right, or should it scale with batch count?
-4. B6: what is the real N-platform curve, measured rather than projected?
-5. If the interval drops to ~30 s, does the snapshot rule (A2) still need to
+4. B2: is `min(4, cpu_count − 1)` right, or should it scale with batch count?
+5. B6: what is the real N-platform curve, measured rather than projected?
+6. If the interval drops to ~30 s, does the snapshot rule (A2) still need to
    exist, or does scanning that often make staleness impossible anyway?
+7. If a future platform turns out to have one large SQLite worth sharding, both
+   deferred options in §4.3 are needed together — snapshot sharing *and* the
+   override. Neither should be built before that platform exists.
