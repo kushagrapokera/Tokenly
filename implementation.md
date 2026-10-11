@@ -704,63 +704,81 @@ Create a responsive interface for OpenCode usage analytics.
 
 ### 9.1 Frontend Setup
 
-- [ ] Initialize React + TypeScript using Vite.
-- [ ] Configure Tailwind CSS.
-- [ ] Configure Recharts.
-- [ ] Configure API client.
-- [ ] Add loading and error states.
+- [x] Initialize React + TypeScript using Vite. → `frontend/`, React 19 + Vite 8
+- [x] Configure Tailwind CSS. → Tailwind 4 via `@tailwindcss/vite`; both themes are CSS variables, no JS palette
+- [x] Configure Recharts. → five charts; the dev server proxies `/api` so the browser sees one origin
+- [x] Configure API client. → `src/api/client.ts`; `fetch` is called in exactly one place and every endpoint is one line
+- [x] Add loading and error states. → `useAsyncData` makes loading/ready/error one value, so no panel can render half a body
 
 ### 9.2 Dashboard Metrics
 
-Display:
-
-1. Tokens today
-2. Tokens this month
-3. Tokens this year
-4. All-time tokens
+- [x] Tokens today → one card per period, each its own range on the same summary endpoint
+- [x] Tokens this month
+- [x] Tokens this year
+- [x] All-time tokens
 
 ### 9.3 Model Breakdown
 
-Display:
-
-- Model name
-- Provider
-- Input tokens
-- Output tokens
-- Total tokens
-- Request count
+- [x] Model name
+- [x] Provider — kept as its own column; two providers can serve one model name
+- [x] Input tokens
+- [x] Output tokens
+- [x] Total tokens
+- [x] Request count
 
 ### 9.4 Charts
 
-Implement:
-
-- Daily token usage line chart
-- Monthly usage bar chart
-- Yearly usage chart
-- Model usage comparison
-- Input/output token breakdown
+- [x] Daily token usage line chart — empty days are kept, so a gap stays visible instead of being bridged
+- [x] Monthly usage bar chart
+- [x] Yearly usage chart
+- [x] Model usage comparison — stacked input/output per model
+- [x] Input/output token breakdown — over time, alongside the per-model view
 
 ### 9.5 Filters
 
-Support:
-
-- Date range
-- Provider
-- Model
+- [x] Date range — all eight named ranges plus a custom from/to pair
+- [x] Provider — options derived from stored usage, so a new provider needs no frontend change
+- [x] Model — same, and the list is never self-filtered, so switching back stays possible
 
 ### 9.6 Tracking Status
 
-Display:
+- [x] OpenCode detection status — an absent install is shown as a state, not an error
+- [x] Last successful synchronization — relative time, absolute on hover
+- [x] Imported usage event count
+- [x] Collection errors — a failed scan is reported and stored usage is stated to be unaffected
+- [x] Incomplete usage warnings — a "Partial" badge on the cards, per-model counts in the table
 
-- OpenCode detection status
-- Last successful synchronization
-- Imported usage event count
-- Collection errors
-- Incomplete usage warnings
+### Implementation
+
+| File | Concern |
+|---|---|
+| `src/api/types.ts` | the response shapes the backend returns, written out rather than generated |
+| `src/api/client.ts` | the only place `fetch` is called |
+| `src/api/errors.ts` | `ApiError` / `NetworkError`, including whether a retry could help |
+| `src/lib/format.ts` | every precision decision about displayed numbers |
+| `src/hooks/useAsyncData.ts` | loading/ready/error as a single value |
+| `src/components/filterState.ts` | the filter shape and its defaults |
+| `src/components/MetricsCards.tsx` | the four headline cards |
+| `src/components/ModelBreakdownTable.tsx` | the per-provider/model table |
+| `src/components/UsageCharts.tsx` | daily, monthly, yearly, and input/output |
+| `src/components/TrackingStatusPanel.tsx` | detection, last sync, rescan |
+| `src/components/charts/` | chart geometry, shared axes, and the legend |
+
+Two decisions worth recording. The dashboard sends the browser's timezone on every
+request, because the backend defaults to UTC and would otherwise put "today" on the
+wrong day for most of the world. And Recharts' built-in `Legend` was replaced with a
+local one: it measures its own box to shrink the plot area, which collapsed the chart
+entirely when the container could not be measured.
 
 ### Completion Criteria
 
 The dashboard accurately displays data returned by the backend.
+→ **Verified** against the live backend with 2,056 real records: the page renders all
+four cards, five charts (20 bar marks, 7 daily points), and the model table, and every
+figure matches the API exactly — all-time 9,575,466 tokens over 2,056 requests, and
+`last_7_days` 832,595 / 58,583 / 0 across the three models the table lists. Charts draw
+one mark per bucket the API returns (7 daily points for 7 daily buckets). 52 Vitest
+tests; `tsc`, oxlint, and the production build all clean.
 
 ---
 
