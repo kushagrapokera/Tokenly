@@ -42,7 +42,7 @@ export function App() {
         <p className="text-xs text-[var(--color-ink-muted)]">Times shown in {TIMEZONE}</p>
       </header>
 
-      <MetricsCards timezone={TIMEZONE} />
+      <MetricsCards filters={filters} timezone={TIMEZONE} />
 
       <FilterBar filters={filters} onChange={setFilters} timezone={TIMEZONE} />
 

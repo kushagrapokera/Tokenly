@@ -14,6 +14,7 @@ import { fetchCollectorStatus, triggerRescan } from '../api/client'
 import type { CollectorStatusEntry, CollectorStatusResponse } from '../api/types'
 import { useAsyncData } from '../hooks/useAsyncData'
 import { formatCount, formatRelative, formatTimestamp } from '../lib/format'
+import { platformLabel } from './filterState'
 import { Badge, Panel, StateMessage } from './ui'
 
 export function TrackingStatusPanel() {
@@ -88,13 +89,13 @@ function CollectorRow({ collector }: { collector: CollectorStatusEntry }) {
   return (
     <div className="border-t border-[var(--color-border)]/60 py-3 first:border-0 first:pt-0">
       <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-sm font-medium capitalize">{collector.platform}</h3>
+        <h3 className="text-sm font-medium">{platformLabel(collector.platform)}</h3>
         <StatusBadge collector={collector} />
       </div>
 
       <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
         <div>
-          <dt className="text-[var(--color-ink-muted)]">OpenCode</dt>
+          <dt className="text-[var(--color-ink-muted)]">Detection</dt>
           <dd>{collector.available ? 'Detected' : 'Not found'}</dd>
         </div>
         <div>

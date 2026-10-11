@@ -1,18 +1,20 @@
 /**
  * Model-wise usage table.
  *
- * Rows keep provider and model as separate columns because two providers can serve the
- * same model name, and collapsing them would attribute one provider's usage to
- * another. The per-row unknown count is shown for the same reason the summary shows
- * completeness: a total that silently excludes unknown records reads as exact.
+ * Rows keep platform, provider, and model as separate columns because two
+ * assistants — or two providers — can serve the same model name, and collapsing
+ * them would attribute one's usage to another. The per-row unknown count is shown
+ * for the same reason the summary shows completeness: a total that silently
+ * excludes unknown records reads as exact.
  */
 
 import { fetchModels } from '../api/client'
 import type { ModelBreakdownResponse } from '../api/types'
 import { useAsyncData } from '../hooks/useAsyncData'
 import { formatCompact, formatCount, formatInteger } from '../lib/format'
-import { Panel, StateMessage } from './ui'
+import { platformLabel } from './filterState'
 import type { DashboardFilters } from './filterState'
+import { Panel, StateMessage } from './ui'
 
 export function ModelBreakdownTable({
   filters,
@@ -64,6 +66,9 @@ function ModelTable({ models }: { models: ModelBreakdownResponse['models'] }) {
         <thead>
           <tr className="border-b border-[var(--color-border)] text-left text-xs tracking-wide text-[var(--color-ink-muted)] uppercase">
             <th scope="col" className="py-2 pr-4 font-medium">
+              Platform
+            </th>
+            <th scope="col" className="py-2 pr-4 font-medium">
               Model
             </th>
             <th scope="col" className="py-2 pr-4 font-medium">
@@ -86,9 +91,12 @@ function ModelTable({ models }: { models: ModelBreakdownResponse['models'] }) {
         <tbody>
           {models.map((model) => (
             <tr
-              key={`${model.provider_id}:${model.model_id}`}
+              key={`${model.platform}:${model.provider_id}:${model.model_id}`}
               className="border-b border-[var(--color-border)]/60 last:border-0"
             >
+              <td className="py-2.5 pr-4 text-[var(--color-ink-muted)]">
+                <span className="break-words">{platformLabel(model.platform)}</span>
+              </td>
               <th scope="row" className="py-2.5 pr-4 text-left font-medium">
                 <span className="block break-words">{model.model_id}</span>
                 {model.unknown_total_events > 0 ? (

@@ -1,17 +1,18 @@
 /**
- * Date-range, provider, and model filters.
+ * Date-range, platform, provider, and model filters.
  *
- * The provider and model options are derived from the unfiltered model breakdown rather
- * than hard-coded, so a newly used model appears without a frontend change. That list
- * is fetched once and never filtered by itself — otherwise selecting one provider would
- * remove the others from the dropdown and make switching back impossible.
+ * The platform, provider, and model options are derived from the unfiltered model
+ * breakdown rather than hard-coded, so a newly used model — or a newly added
+ * assistant — appears without a frontend change. That list is fetched once and
+ * never filtered by itself; otherwise selecting one provider would remove the
+ * others from the dropdown and make switching back impossible.
  */
 
 import { useEffect, useState } from 'react'
 
 import { fetchModels } from '../api/client'
 import type { ModelBreakdownResponse, RangeName } from '../api/types'
-import { DEFAULT_FILTERS, RANGE_OPTIONS } from './filterState'
+import { DEFAULT_FILTERS, RANGE_OPTIONS, platformLabel } from './filterState'
 import type { DashboardFilters } from './filterState'
 
 export function FilterBar({
@@ -45,6 +46,7 @@ export function FilterBar({
     }
   }, [timezone])
 
+  const platforms = distinct(options.map((model) => model.platform))
   const providers = distinct(options.map((model) => model.provider_id))
   const models = distinct(options.map((model) => model.model_id))
 
@@ -74,6 +76,17 @@ export function FilterBar({
           />
         </>
       ) : null}
+
+      <Select
+        id="platform"
+        label="Platform"
+        value={filters.platform ?? ''}
+        onChange={(platform) => onChange({ ...filters, platform: platform || null })}
+        options={[
+          { value: '', label: 'All platforms' },
+          ...platforms.map((platform) => ({ value: platform, label: platformLabel(platform) })),
+        ]}
+      />
 
       <Select
         id="provider"

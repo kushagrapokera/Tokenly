@@ -300,6 +300,35 @@ Do not create Cline-specific aggregation functions if the existing shared aggreg
 
 ## 10. Phase 7 — Extend Existing API and Dashboard
 
+**Status: done, with three defects fixed.** The API needed nothing new — it
+already accepted `platform` on every usage endpoint, and Phase 6 put the platform
+in each model-breakdown row. The dashboard could not reach any of it.
+
+- **Platform filter.** `filters.platform` existed in state and was already sent to
+  the charts and the breakdown, but nothing could set it, so the page could only
+  ever show combined totals. A platform dropdown was added beside the existing
+  provider and model ones, deriving its options the same way they do: from the
+  unfiltered model breakdown, so a newly added assistant appears without a
+  frontend change.
+- **Platform column in the model breakdown**, added to the row key so the same
+  model name reached through two platforms stays two rows.
+- **The headline cards ignored the filters entirely.** `MetricsCards` accepted
+  only a timezone, so narrowing to one platform changed every chart and left the
+  four big numbers showing all platforms — the figures looked at first were the
+  ones ignoring the filter. The cards now carry the same platform, provider, and
+  model filters as the panels below them.
+
+Two further problems were found and fixed in passing. The tracking panel labelled
+every collector's row "OpenCode", so Cline's row claimed OpenCode had been
+detected; it now reads "Detection", with the platform named in its heading. And
+platform display names were derived per component, so the filter dropdown and the
+breakdown table could disagree about how a platform is spelled; both now use one
+`platformLabel` helper that falls back to the raw id for a platform added later.
+
+**Not built:** the platform comparison chart in plan §5.4. It is the one item
+here needing new visualisation rather than wiring, and the per-platform filter
+plus the breakdown column cover the same need for now.
+
 Reuse the existing API endpoints and dashboard components.
 
 Modify only what is necessary to:

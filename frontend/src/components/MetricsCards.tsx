@@ -4,6 +4,11 @@
  * Each card is one summary request. They are fetched together rather than in sequence
  * so the page settles in one pass — four cards appearing one at a time reads as four
  * separate loads.
+ *
+ * The cards honour the same filters as every panel below them. They previously took
+ * only a timezone, which meant narrowing to one platform changed the charts but left
+ * the headline totals showing every platform — the numbers you look at first were the
+ * ones ignoring the filter.
  */
 
 import { fetchSummary } from '../api/client'
@@ -12,22 +17,44 @@ import { useAsyncData } from '../hooks/useAsyncData'
 import { formatCompact, formatCount, formatInteger } from '../lib/format'
 import { METRIC_CARDS } from './metricCards'
 import type { MetricCardSpec } from './metricCards'
+import type { DashboardFilters } from './filterState'
 import { Badge, Skeleton } from './ui'
 
-export function MetricsCards({ timezone }: { timezone: string }) {
+export function MetricsCards({
+  filters,
+  timezone,
+}: {
+  filters: DashboardFilters
+  timezone: string
+}) {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       {METRIC_CARDS.map((spec) => (
-        <MetricCard key={spec.key} spec={spec} timezone={timezone} />
+        <MetricCard key={spec.key} spec={spec} filters={filters} timezone={timezone} />
       ))}
     </div>
   )
 }
 
-function MetricCard({ spec, timezone }: { spec: MetricCardSpec; timezone: string }) {
+function MetricCard({
+  spec,
+  filters,
+  timezone,
+}: {
+  spec: MetricCardSpec
+  filters: DashboardFilters
+  timezone: string
+}) {
   const { state } = useAsyncData<SummaryResponse>(
-    () => fetchSummary({ range: spec.range, timezone }),
-    [spec.range, timezone],
+    () =>
+      fetchSummary({
+        range: spec.range,
+        timezone,
+        platform: filters.platform,
+        provider_id: filters.provider,
+        model_id: filters.model,
+      }),
+    [spec.range, filters, timezone],
   )
 
   if (state.status === 'loading') {

@@ -30,7 +30,7 @@ describe('MetricsCards', () => {
   it('shows a headline total for each period', async () => {
     mockFetch({ '/api/usage/summary': makeSummary() })
 
-    render(<MetricsCards timezone="UTC" />)
+    render(<MetricsCards filters={DEFAULT_FILTERS} timezone="UTC" />)
 
     await waitFor(() => {
       expect(screen.getByText('Today')).toBeInTheDocument()
@@ -39,10 +39,33 @@ describe('MetricsCards', () => {
     expect(screen.getAllByText('1.25K')).toHaveLength(4)
   })
 
-  it('shows the request count beneath the total', async () => {
+  it('honours the platform filter like every other panel', async () => {
+    const requested: string[] = []
+    const stub = stubFetch({ '/api/usage/summary': makeSummary() })
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      requested.push(String(input))
+      return stub(input as RequestInfo)
+    }) as unknown as typeof fetch
+
+    render(
+      <MetricsCards
+        filters={{ ...DEFAULT_FILTERS, platform: 'cline' }}
+        timezone="UTC"
+      />,
+    )
+
+    await waitFor(() => {
+      expect(requested.length).toBeGreaterThan(0)
+    })
+
+    // Every headline number is scoped, or the filter reads as applying only to charts.
+    expect(requested.every((url) => url.includes('platform=cline'))).toBe(true)
+  })
+
+  it('reports the request count beneath the total', async () => {
     mockFetch({ '/api/usage/summary': makeSummary() })
 
-    render(<MetricsCards timezone="UTC" />)
+    render(<MetricsCards filters={DEFAULT_FILTERS} timezone="UTC" />)
 
     expect(await screen.findAllByText('4 requests')).toHaveLength(4)
   })
@@ -59,7 +82,7 @@ describe('MetricsCards', () => {
       }),
     })
 
-    render(<MetricsCards timezone="UTC" />)
+    render(<MetricsCards filters={DEFAULT_FILTERS} timezone="UTC" />)
 
     expect(await screen.findAllByText('Partial')).toHaveLength(4)
   })
@@ -77,7 +100,7 @@ describe('MetricsCards', () => {
       }),
     })
 
-    render(<MetricsCards timezone="UTC" />)
+    render(<MetricsCards filters={DEFAULT_FILTERS} timezone="UTC" />)
 
     expect(await screen.findAllByText('No usage in this period')).toHaveLength(4)
   })
@@ -90,7 +113,7 @@ describe('MetricsCards', () => {
         }),
     ) as unknown as typeof fetch
 
-    render(<MetricsCards timezone="UTC" />)
+    render(<MetricsCards filters={DEFAULT_FILTERS} timezone="UTC" />)
 
     expect(await screen.findAllByText('database unavailable')).toHaveLength(4)
   })
@@ -125,6 +148,25 @@ describe('ModelBreakdownTable', () => {
     expect(await screen.findAllByText('sonnet')).toHaveLength(2)
     expect(screen.getByText('alpha')).toBeInTheDocument()
     expect(screen.getByText('beta')).toBeInTheDocument()
+  })
+
+  it('keeps the same model name on two platforms on separate rows', async () => {
+    mockFetch({
+      '/api/usage/models': makeModels({
+        models: [
+          { platform: 'opencode', provider_id: 'shared', model_id: 'sonnet', request_count: 1, totals: { input_tokens: 10, output_tokens: 1, total_tokens: 11, consumption_tokens: 11 }, unknown_total_events: 0 },
+          { platform: 'cline', provider_id: 'shared', model_id: 'sonnet', request_count: 2, totals: { input_tokens: 20, output_tokens: 2, total_tokens: 22, consumption_tokens: 22 }, unknown_total_events: 0 },
+        ],
+      }),
+    })
+
+    render(<ModelBreakdownTable filters={filters} timezone="UTC" />)
+
+    // Same provider, same model, two assistants: both rows must survive, and the
+    // platform is the only thing telling them apart.
+    expect(await screen.findAllByText('sonnet')).toHaveLength(2)
+    expect(screen.getByText('OpenCode')).toBeInTheDocument()
+    expect(screen.getByText('Cline')).toBeInTheDocument()
   })
 
   it('notes records that reported no total', async () => {
@@ -185,6 +227,26 @@ describe('TrackingStatusPanel', () => {
     expect(await screen.findByText('Not found')).toBeInTheDocument()
     expect(screen.getByText('Not detected')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('reports detection per platform without naming the wrong one', async () => {
+    mockFetch({
+      '/api/collector/status': {
+        collectors: [
+          { platform: 'opencode', available: true, status: 'idle', source_path: '/a', storage_format: 'sqlite', detail: '', checkpoint: null, last_scan_at: '2026-10-11T11:49:09Z', stored_events: 2540 },
+          { platform: 'cline', available: true, status: 'idle', source_path: '/b', storage_format: 'json+sqlite-index', detail: '', checkpoint: null, last_scan_at: '2026-10-11T11:49:10Z', stored_events: 2142 },
+        ],
+        generated_at: '2026-10-11T12:00:00Z',
+      },
+    })
+
+    render(<TrackingStatusPanel />)
+
+    expect(await screen.findByText('OpenCode')).toBeInTheDocument()
+    expect(screen.getByText('Cline')).toBeInTheDocument()
+    // Each row is labelled by what it detects, not by a hard-coded assistant name.
+    expect(screen.getAllByText('Detection')).toHaveLength(2)
+    expect(screen.getAllByText('Detected')).toHaveLength(2)
   })
 
   it('warns when the last scan failed but usage is intact', async () => {
@@ -299,6 +361,65 @@ describe('FilterBar', () => {
       'free-model',
       'sonnet',
     ])
+  })
+
+  it('populates platform options from stored usage', async () => {
+    mockFetch({
+      '/api/usage/models': makeModels({
+        models: [
+          { platform: 'opencode', provider_id: 'opencode', model_id: 'sonnet', request_count: 2, totals: { input_tokens: 20, output_tokens: 2, total_tokens: 22, consumption_tokens: 22 }, unknown_total_events: 0 },
+          { platform: 'cline', provider_id: 'cline', model_id: 'gemini', request_count: 3, totals: { input_tokens: 30, output_tokens: 3, total_tokens: 33, consumption_tokens: 33 }, unknown_total_events: 0 },
+        ],
+      }),
+    })
+
+    render(<FilterBar filters={DEFAULT_FILTERS} onChange={() => {}} timezone="UTC" />)
+
+    const platform = await screen.findByLabelText('Platform')
+
+    // The stored ids are the values sent to the api; only the visible text is prettied.
+    expect([...platform.querySelectorAll('option')].map((o) => o.value)).toEqual([
+      '',
+      'cline',
+      'opencode',
+    ])
+    expect([...platform.querySelectorAll('option')].map((o) => o.textContent)).toEqual([
+      'All platforms',
+      'Cline',
+      'OpenCode',
+    ])
+  })
+
+  it('reports a chosen platform in the next filters', async () => {
+    const user = userEvent.setup()
+    mockFetch({ '/api/usage/models': makeModels() })
+    const onChange = vi.fn()
+
+    render(<FilterBar filters={DEFAULT_FILTERS} onChange={onChange} timezone="UTC" />)
+
+    await user.selectOptions(await screen.findByLabelText('Platform'), 'opencode')
+
+    expect(onChange).toHaveBeenCalledWith({ ...DEFAULT_FILTERS, platform: 'opencode' })
+  })
+
+  it('offers a new platform without a frontend change', async () => {
+    // The option list is derived from stored usage, so an assistant added later
+    // shows up here without editing this component.
+    mockFetch({
+      '/api/usage/models': makeModels({
+        models: [
+          { platform: 'codex', provider_id: 'openai', model_id: 'gpt', request_count: 1, totals: { input_tokens: 1, output_tokens: 1, total_tokens: 2, consumption_tokens: 2 }, unknown_total_events: 0 },
+        ],
+      }),
+    })
+
+    render(<FilterBar filters={DEFAULT_FILTERS} onChange={() => {}} timezone="UTC" />)
+
+    const platform = await screen.findByLabelText('Platform')
+
+    // An unrecognised id falls back to itself rather than rendering blank.
+    expect([...platform.querySelectorAll('option')].map((o) => o.value)).toContain('codex')
+    expect(screen.getByRole('option', { name: 'codex' })).toBeInTheDocument()
   })
 
   it('reveals date inputs only for a custom range', async () => {
