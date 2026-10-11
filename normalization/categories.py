@@ -47,3 +47,27 @@ CLINE_RELATIONSHIPS = CategoryRelationships(
     cache_overlap="additive",
     reasoning_overlap="additive",
 )
+
+
+CLAUDE_RELATIONSHIPS = CategoryRelationships(
+    cache_overlap="additive",
+    # Anthropic reports thinking tokens inside output_tokens_details.thinking_tokens,
+    # which is already part of output_tokens — a subset, never extra. Verified on the
+    # live store: thinking_tokens was 0 on every assistant line while output was
+    # non-zero, and the field proofs it is a breakdown of output rather than a
+    # separate category (see docs/claude_storage_analysis.md §4).
+    reasoning_overlap="subset_of_output",
+)
+
+
+CODEX_RELATIONSHIPS = CategoryRelationships(
+    # Codex reports `cached_input_tokens` and `reasoning_output_tokens` inside its
+    # six-field usage object, but its own `total_tokens` equals input + output and
+    # never adds them again. Verified on every token_usage_record in the live store
+    # (Codex CLI 0.155.1): `total == input + output`, `cached_input <= input`, and
+    # `reasoning <= output` held on all 229 records — so both are subsets of
+    # input/output, not additive categories on top of them (see
+    # `docs/codex_storage_analysis.md` §4).
+    cache_overlap="subset_of_input",
+    reasoning_overlap="subset_of_output",
+)

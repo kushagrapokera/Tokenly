@@ -38,6 +38,12 @@ class Settings(BaseSettings):
 
     cline_data_dir: Path | None = None
 
+    claude_data_dir: Path | None = None
+
+    # Codex CLI keeps its rollouts under `$CODEX_HOME/sessions/**` (`CODEX_HOME`
+    # defaults to `~/.codex`). Set this to point the collector elsewhere.
+    codex_home: Path | None = None
+
     # How far back an incremental scan re-reads, in milliseconds. Re-reading a window
     # costs a few redundant upserts and recovers usage that landed after the last scan.
     rescan_overlap_ms: int = 300_000
