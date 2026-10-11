@@ -4,6 +4,11 @@
  * The three calendar series and the input/output split are fetched from one place so
  * the panels below the table always agree with each other: each chart states its
  * granularity explicitly rather than inheriting whatever the last request returned.
+ *
+ * Once loaded, each chart also names the window it actually covers. The range filter
+ * defaults to the last seven days, so a chart that does not say so can be read as the
+ * whole history; the model breakdown below already stated its window, and these
+ * panels now match it.
  */
 
 import { fetchDaily, fetchMonthly, fetchTimeline, fetchYearly } from '../api/client'
@@ -94,7 +99,10 @@ function TimelinePanel({
   const { state, reload } = useAsyncData<TimelineResponse>(load, [filters, timezone])
 
   return (
-    <Panel title={title} subtitle={subtitle}>
+    <Panel
+      title={title}
+      subtitle={state.status === 'ready' ? `${subtitle} · ${describeWindow(state.data.window.label)}` : subtitle}
+    >
       {state.status === 'loading' ? <StateMessage kind="loading" /> : null}
       {state.status === 'error' ? (
         <StateMessage kind="error" message={state.error.message} onRetry={reload} />
@@ -108,4 +116,8 @@ function TimelinePanel({
       ) : null}
     </Panel>
   )
+}
+
+function describeWindow(label: string): string {
+  return label.replace(/_/g, ' ')
 }
