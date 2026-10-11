@@ -21,10 +21,24 @@ class Settings(BaseSettings):
     port: int = 8000
     log_level: str = "INFO"
     database_path: Path = Path("data/tokenly.db")
+    default_timezone: str = "UTC"
+
+    # The API is a local-only service; cross-origin access is limited to the local
+    # frontend dev servers so a page on another origin cannot read usage data.
+    cors_allow_origins: list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+    cors_allow_methods: list[str] = ["GET"]
+    cors_allow_headers: list[str] = ["Content-Type"]
 
     opencode_data_dir: Path | None = None
     opencode_command: str = "opencode"
     opencode_command_timeout_seconds: float = 15.0
+
+    # How far back an incremental scan re-reads, in milliseconds. Re-reading a window
+    # costs a few redundant upserts and recovers usage that landed after the last scan.
+    rescan_overlap_ms: int = 300_000
 
     @property
     def database_url(self) -> str:

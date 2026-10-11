@@ -54,8 +54,14 @@ class SyncService:
         self._rescan_overlap_ms = rescan_overlap_ms
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
-    def run(self, session: Session) -> SyncResult:
-        """Perform one synchronization pass and store whatever it finds."""
+    def run(self, session: Session, *, from_scratch: bool = False) -> SyncResult:
+        """Perform one synchronization pass and store whatever it finds.
+
+        `from_scratch` ignores the stored checkpoint and reads the whole source, which
+        is what a manual rescan means. It is safe: the upsert is idempotent, so a full
+        re-read updates rows in place instead of doubling the totals. The checkpoint is
+        still advanced afterwards, so the next ordinary scan resumes normally.
+        """
         platform = self._collector.platform
         started_at = self._clock()
         progress = load_progress(session, platform)
@@ -63,6 +69,14 @@ class SyncService:
         source_path = progress.source_path if progress else ""
 
         self._warn_if_interrupted(platform, progress)
+
+        if from_scratch:
+            logger.info(
+                "running a full rescan for %s; ignoring checkpoint %s",
+                platform,
+                previous_checkpoint,
+            )
+            previous_checkpoint = None
 
         mode = MODE_HISTORICAL if previous_checkpoint is None else MODE_INCREMENTAL
         resume_from = self._resume_point(previous_checkpoint)

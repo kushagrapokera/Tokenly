@@ -67,3 +67,42 @@ class InvalidGranularityError(AggregationError):
             f"unsupported timeline granularity {granularity!r}; use 'day', 'month', or 'year'"
         )
         self.granularity = granularity
+
+
+class UnknownRangeError(AggregationError):
+    """Raised when a requested aggregation range is not one of the named ranges."""
+
+    def __init__(self, range_name: str, supported: tuple[str, ...]) -> None:
+        super().__init__(f"unknown range {range_name!r}; use one of {', '.join(supported)}")
+        self.range_name = range_name
+        self.supported = supported
+
+
+class ApiError(TokenlyError):
+    """Raised when a request cannot be served, carrying the status the client should see."""
+
+    def __init__(self, status_code: int, detail: str) -> None:
+        super().__init__(detail)
+        self.status_code = status_code
+        self.detail = detail
+
+
+class RequestValidationError(ApiError):
+    """Raised when request parameters are missing, malformed, or contradictory."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(400, detail)
+
+
+class NotFoundError(ApiError):
+    """Raised when the requested resource does not exist."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(404, detail)
+
+
+class ServiceUnavailableError(ApiError):
+    """Raised when a dependency the request needs is not available right now."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(503, detail)

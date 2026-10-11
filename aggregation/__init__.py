@@ -9,6 +9,14 @@ sums, and incomplete coverage is reported alongside the totals, never hidden.
 
 from aggregation.breakdown import ModelUsage, breakdown_by_model
 from aggregation.filters import UsageFilter, filter_conditions
+from aggregation.ranges import (
+    DEFAULT_RANGE,
+    RANGE_NAMES,
+    NamedRange,
+    find_range,
+    resolve_range,
+    resolve_range_for_timeline,
+)
 from aggregation.summary import UsageSummary, summarize_range
 from aggregation.timeline import TimeBucket, bucket_timeline
 from aggregation.windows import (
@@ -24,7 +32,10 @@ from aggregation.windows import (
 )
 
 __all__ = [
+    "DEFAULT_RANGE",
+    "RANGE_NAMES",
     "ModelUsage",
+    "NamedRange",
     "TimeBucket",
     "TimeWindow",
     "UsageFilter",
@@ -36,8 +47,11 @@ __all__ = [
     "current_year_window",
     "custom_window",
     "filter_conditions",
+    "find_range",
     "last_7_days_window",
     "previous_month_window",
+    "resolve_range",
+    "resolve_range_for_timeline",
     "summarize_range",
     "today_window",
     "yesterday_window",
