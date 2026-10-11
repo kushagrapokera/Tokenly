@@ -1,484 +1,907 @@
-# Cline CLI Integration — Implementation Plan
+# Universal AI Token Tracker — implementation_plan.md
 
-> Collection performance, and how the design scales as more platforms are added,
-> is worked out separately in [`parallelism.md`](parallelism.md).
+**Project:** Universal AI Token Usage Tracker  
+**Implementation Type:** Incremental integration into an existing application  
+**Current Scope:** Claude Code + Codex CLI  
+**Primary Requirement:** Maximum code reuse, minimum new code
 
-## 1. Project Context
+---
 
-This project is an existing unified AI token usage tracker.
+## 1. Project Status
 
-**OpenCode integration: DONE**
+| Platform | Status | Required Action |
+|---|---|---|
+| OpenCode | COMPLETED | Preserve and reuse |
+| Cline CLI | COMPLETED | Preserve and reuse |
+| Claude Code | TO IMPLEMENT | Add platform adapter |
+| Codex CLI | TO IMPLEMENT | Add platform adapter |
+| Antigravity | FUTURE | No implementation |
+| FreeBuff | FUTURE | No implementation |
 
-**Cline CLI integration: CURRENT TASK**
+OpenCode and Cline CLI are already implemented.
 
-The goal is to add Cline CLI support to the existing application, not build a separate Cline token tracker.
+The existing application, database, backend, analytics, and dashboard must be retained.
 
-The implementation must maximize code reuse and minimize changes to existing functionality.
+**Do not create separate applications for Claude Code and Codex CLI.**
 
-## 2. Mandatory Development Rules
+---
 
-1. Do not create a new standalone application for Cline.
-2. Do not create a separate backend.
-3. Do not create a separate frontend.
-4. Do not create a separate database.
-5. Do not duplicate existing services or utilities.
-6. Do not rewrite working OpenCode functionality unnecessarily.
-7. Reuse existing abstractions wherever compatible.
-8. Extend shared abstractions only when necessary.
-9. Keep platform-specific parsing inside the Cline collector.
-10. Preserve existing OpenCode behavior and data.
-11. Do not introduce API keys or proxies.
-12. Do not implement unrelated features.
-13. Before creating a component, check whether equivalent functionality already exists.
-14. Prefer minimal, backward-compatible changes.
-15. Follow existing repository conventions and dependencies.
+## 2. Mandatory Engineering Principles
 
-## 3. Phase 0 — Existing Codebase Audit
+The implementation must follow these rules:
 
-**Status: done.** The audit drove the design rather than producing a separate
-assessment document; its conclusions are the reuse decisions recorded in
-`docs/cline_storage_analysis.md` §15 and in the shared modules themselves.
+1. Reuse existing code before writing new code.
+2. Inspect the complete relevant codebase before implementation.
+3. Avoid duplicate collectors, services, utilities, and database models.
+4. Use the existing database.
+5. Use the existing backend.
+6. Use the existing frontend.
+7. Use the existing token normalization and aggregation services.
+8. Use the existing synchronization mechanism wherever compatible.
+9. Preserve all existing OpenCode and Cline CLI functionality.
+10. Introduce only platform-specific parsing and discovery logic.
+11. Extend shared interfaces only when necessary.
+12. Prefer small, backward-compatible changes.
+13. Avoid introducing new dependencies when existing libraries are sufficient.
+14. Do not create platform-specific analytics pipelines.
+15. Do not modify users' Claude Code or Codex CLI configurations.
+16. Do not require API keys or proxy servers.
+17. Do not read or persist credentials.
+18. Do not implement unrelated features.
+19. Do not rewrite working code merely for stylistic consistency.
+20. Validate every change against existing regression tests.
 
-**This phase is mandatory. Do not begin implementation before completing it.**
+**Core rule: Before creating a new component, search the repository for equivalent functionality and reuse it if compatible.**
 
-Inspect the existing repository and identify:
+---
 
-- Current OpenCode collector
-- Collector interfaces or abstractions
-- Token usage schema
-- Token normalization logic
-- Deduplication logic
-- Database models
-- Historical import functionality
-- Synchronization and monitoring services
+## 3. Target Architecture
+
+The application must continue using its existing shared infrastructure.
+
+```text
+                  Universal Token Tracker
+                            |
+                Existing Collector Interface
+                            |
+         +------------------+------------------+
+         |                  |                  |
+     OpenCode            Cline CLI        New Collectors
+      DONE                DONE                  |
+                                      +---------+---------+
+                                      |                   |
+                                Claude Code          Codex CLI
+                                  Adapter              Adapter
+                                      |                   |
+                                      +---------+---------+
+                                                |
+                                   Existing Shared Pipeline
+                                                |
+                                       Token Normalization
+                                                |
+                                         Deduplication
+                                                |
+                                         Persistence
+                                                |
+                                         Aggregation
+                                                |
+                                       Existing Backend
+                                                |
+                                       Existing Dashboard
+```
+
+The new adapters should produce the same normalized usage representation already accepted by the application.
+
+If the existing interface is insufficient, extend it rather than building an independent pipeline.
+
+---
+
+# Phase 0 — Existing Repository Audit
+
+**Priority: P0 — Mandatory**
+
+## Objective
+
+Identify exactly which components are already implemented and determine the minimum required changes.
+
+Do not write production code before completing this phase.
+
+### Inspect
+
+- OpenCode collector
+- Cline CLI collector
+- Shared collector interface
+- Platform registration
+- Storage discovery utilities
+- JSON/JSONL readers
+- SQLite access utilities
+- Token normalization
+- Deduplication
+- Historical import
+- Incremental synchronization
+- Database schema
 - Aggregation functions
-- API endpoints
+- Backend API
 - Dashboard components
-- Existing tests
+- Test utilities
 
-For every component, classify it as:
+### Reuse Classification
 
-- **REUSE:** Existing implementation works without changes.
-- **EXTEND:** Existing implementation needs a small, backward-compatible modification.
-- **NEW:** Cline-specific functionality does not exist.
-- **REFACTOR:** Existing functionality is too tightly coupled to OpenCode and needs generalization.
+For every relevant component, assign one of these actions:
 
-Do not refactor unrelated code.
+| Classification | Meaning |
+|---|---|
+| REUSE | Works without modification |
+| EXTEND | Small backward-compatible change |
+| REFACTOR | Generalize existing platform-specific code |
+| NEW | Functionality does not already exist |
 
-### Deliverable
+### Expected Reuse
 
-Produce a short reuse assessment identifying:
-
-- Files to reuse
-- Files to modify
-- New files required
-- Existing functionality that must remain unchanged
-- Potential regression risks
-
-## 4. Phase 1 — Cline CLI Data Source Validation
-
-**Status: done.** `docs/cline_storage_analysis.md`, verified against Cline CLI
-3.0.70 on Linux.
-
-Investigate Cline CLI's actual local storage for the supported installed version.
-
-Determine:
-
-- Active Cline data directory
-- Session storage layout
-- Message history format
-- SQLite usage, if present
-- Provider and model identifiers
-- Input and output token fields
-- Usage timestamps
-- Stable usage identifiers
-- Session summary versus per-message usage
-- Reasoning and subagent token accounting
-
-Prefer request-level usage records for model attribution.
-
-Use session-level totals for validation or fallback, not as additional usage when corresponding request records have already been counted.
+| Component | Preferred Action |
+|---|---|
+| Collector interface | REUSE |
+| JSON/JSONL utilities | REUSE |
+| Database | REUSE |
+| Token schema | REUSE |
+| Normalization | REUSE / EXTEND |
+| Deduplication | REUSE / EXTEND |
+| Historical sync | REUSE |
+| File monitoring | REUSE / EXTEND |
+| Aggregation | REUSE |
+| Backend API | REUSE / EXTEND |
+| Dashboard | REUSE / EXTEND |
+| Claude-specific parser | NEW |
+| Codex-specific parser | NEW |
+| Platform-specific tests | NEW |
 
 ### Deliverable
 
-Document the verified storage layout and token field mappings.
+Create `docs/integration_reuse_audit.md` containing:
 
-Do not assume that every Cline CLI version uses identical paths or schemas.
+- Existing reusable files
+- Existing functions and classes to reuse
+- Files requiring modification
+- Minimum new files
+- Compatibility risks
+- Proposed implementation order
 
-## 5. Phase 2 — Add the Cline Collector
+### Exit Criteria
 
-**Status: done.** `collectors/cline/` (locator, snapshot, reader, extractor,
-collector), registered in `collectors/registry.py` alongside OpenCode.
+The implementation scope is reduced to the smallest practical set of changes.
 
-Create only the Cline-specific functionality necessary to extract usage records.
+---
 
-Required responsibilities:
+# Phase 1 — Shared Compatibility Assessment
 
-- Discover Cline CLI storage.
-- Read available session records.
-- Read message usage metadata.
-- Identify provider and model.
-- Extract input and output tokens.
-- Extract timestamps and source identifiers.
-- Handle incomplete records.
-- Convert source records into the existing shared collector format.
+**Priority: P0**
 
-Reuse the existing collector interface.
+## Objective
 
-Do not create another normalization engine, database service, or scheduler.
+Ensure the existing collector system can represent Claude Code and Codex CLI usage without creating duplicate infrastructure.
 
-If the existing collector interface is OpenCode-specific, generalize it with minimal changes while preserving OpenCode behavior.
+### Required Shared Fields
 
-## 6. Phase 3 — Integrate With Shared Services
+The existing usage representation should support:
 
-**Status: done, with no shared service changed.** Cline already fits the
-existing abstractions, so nothing in normalization, deduplication, persistence,
-synchronization, or aggregation needed extending. `tests/integration/` proves
-it: `test_shared_pipeline.py` covers the cross-platform contract (one
-database, one normalization, platform filtering, no id collisions) and
-`test_cline_pipeline.py` drives a stand-in Cline store from source file to
-aggregate for each risky case below.
+- Platform identifier
+- Provider identifier
+- Model identifier
+- Session identifier
+- Source usage event identifier
+- Timestamp
+- Input tokens
+- Output tokens
+- Total tokens
+- Usage completeness/status
 
-Pass Cline usage records through the existing processing pipeline.
+Additional optional metadata may be needed for source revisions and token accounting.
+
+### Tasks
+
+- [ ] Verify existing usage schema compatibility.
+- [ ] Verify platform-specific event identity.
+- [ ] Verify nullable token fields.
+- [ ] Verify model/provider attribution.
+- [ ] Verify timestamp normalization.
+- [ ] Verify incremental record updates.
+- [ ] Verify historical reconciliation.
+- [ ] Verify source data deletion behavior.
+- [ ] Verify dashboard platform filtering.
+
+### Rules
+
+Do not introduce a new schema if the existing schema is sufficient.
+
+Do not migrate the database unnecessarily.
+
+Do not refactor the OpenCode and Cline collectors unless a shared interface change genuinely requires it.
+
+### Exit Criteria
+
+Both new collectors can integrate with the existing shared processing pipeline.
+
+---
+
+# Phase 2 — Claude Code Storage Discovery and Research
+
+**Priority: P0**
+
+## Objective
+
+Validate the local data sources used by the installed Claude Code version.
+
+### Candidate Data Sources
+
+Claude Code commonly persists session histories under:
+
+`~/.claude/projects/`
+
+Sessions may be stored as JSONL files containing message metadata.
+
+Potential usage fields include:
+
+- `message.model`
+- `message.usage.input_tokens`
+- `message.usage.output_tokens`
+- `message.usage.cache_creation_input_tokens`
+- `message.usage.cache_read_input_tokens`
+- `message.id`
+- Session identifiers
+- Timestamps
+
+These fields must be validated against actual records.
+
+### Tasks
+
+- [ ] Detect Claude Code installation.
+- [ ] Detect active Claude data directory.
+- [ ] Discover available project sessions.
+- [ ] Identify JSONL session files.
+- [ ] Identify assistant message usage records.
+- [ ] Identify model identifiers.
+- [ ] Identify stable message identifiers.
+- [ ] Identify usage timestamps.
+- [ ] Determine repeated-message behavior.
+- [ ] Investigate subagent sessions.
+- [ ] Investigate model switching.
+- [ ] Investigate third-party provider attribution.
+- [ ] Verify cache-token accounting.
+- [ ] Identify version-specific differences.
+
+### Privacy Requirements
+
+Only extract the fields needed for usage analytics.
+
+Do not store:
+
+- Prompt text
+- Model response text
+- Tool call arguments
+- Source code
+- Credentials
+
+### Exit Criteria
+
+Claude Code's usage source and token accounting behavior are verified.
+
+---
+
+# Phase 3 — Claude Code Adapter
+
+**Priority: P0**
+
+## Objective
+
+Add a minimal Claude Code collector using existing interfaces.
+
+### Proposed Responsibilities
+
+The adapter should only:
+
+1. Discover Claude Code session data.
+2. Read relevant usage records.
+3. Extract model and provider metadata.
+4. Extract token counts.
+5. Extract timestamps and stable identifiers.
+6. Return records compatible with the existing shared pipeline.
+
+### Preferred Reuse
+
+Reuse the existing:
+
+- Collector base class
+- JSONL reader, if present
+- Filesystem scanner
+- Incremental synchronization
+- Token normalizer
+- Deduplication engine
+- Database persistence
+
+### Claude-Specific Considerations
+
+**Repeated message records**
+
+Claude Code may persist multiple records associated with one assistant response.
+
+Use stable request/message identity and update or merge usage appropriately.
+
+Do not count the same model request multiple times.
+
+**Model switching**
+
+Attribute each request to its actual model, not only the session's default model.
+
+**Cache tokens**
+
+Claude Code can report cached input separately.
+
+The shared accounting policy must explicitly decide how cached input contributes to the overall input and total token metrics.
+
+Do not omit tokens simply because they were served from cache.
+
+Do not count overlapping categories twice.
+
+**Subagents**
+
+Identify subagent sessions and count their actual model requests once.
+
+### Exit Criteria
+
+Claude Code usage passes through the existing pipeline and appears in the existing database.
+
+---
+
+# Phase 4 — Claude Code Provider Compatibility
+
+**Priority: P1**
+
+## Objective
+
+Support native and compatible third-party provider configurations.
+
+### Target Providers
+
+- Anthropic
+- OpenRouter
+- Amazon Bedrock
+- Google Vertex AI
+- DeepSeek
+- GLM / Z.AI
+- Kimi / Moonshot
+- Other compatible gateways
+
+### Important Distinction
+
+The provider configured by Claude Code is not necessarily the company that originally developed the model.
+
+For example:
+
+- Platform: Claude Code
+- Gateway: OpenRouter
+- Model: DeepSeek
+
+Preserve the gateway/provider separately from the model identifier whenever possible.
+
+### Provider Detection Rules
+
+1. Prefer explicit provider metadata.
+2. Use documented non-secret configuration metadata when reliable.
+3. Do not inspect credential values.
+4. Do not assume provider from model name alone.
+5. Do not assume a model is served directly by its developer.
+6. Use `unknown` when reliable attribution is unavailable.
+
+If a gateway can route requests to multiple upstream providers, distinguish the configured gateway from the actual upstream provider when both are available.
+
+Do not invent upstream provider attribution.
+
+### Implementation Requirements
+
+- [ ] Reuse existing provider normalization.
+- [ ] Add mappings only when necessary.
+- [ ] Preserve unknown providers.
+- [ ] Support native Claude models.
+- [ ] Support compatible third-party models.
+- [ ] Test provider/model switching.
+- [ ] Handle missing provider metadata.
+
+### Exit Criteria
+
+Claude Code usage is attributed to the correct platform, known gateway/provider, and model without requiring credentials.
+
+---
+
+# Phase 5 — Codex CLI Storage Discovery and Research
+
+**Priority: P0**
+
+## Objective
+
+Validate Codex CLI's local session storage and usage reporting.
+
+### Candidate Data Sources
+
+Codex CLI commonly stores session records under:
+
+`~/.codex/sessions/`
+
+Archived sessions may also exist under:
+
+`~/.codex/archived_sessions/`
+
+Session rollout files may contain JSONL events.
+
+Relevant event structures may include:
+
+- `event_msg`
+- `token_count`
+- `last_token_usage`
+- `total_token_usage`
+- `turn_context`
+- Model metadata
+- Session timestamps
+
+The exact fields and event semantics must be validated against the installed Codex version.
+
+### Tasks
+
+- [ ] Detect Codex CLI installation.
+- [ ] Detect active Codex home directory.
+- [ ] Discover active sessions.
+- [ ] Discover archived sessions.
+- [ ] Identify token usage events.
+- [ ] Identify cumulative token counters.
+- [ ] Identify per-turn token counters.
+- [ ] Identify model context events.
+- [ ] Identify provider configuration metadata.
+- [ ] Identify session identifiers.
+- [ ] Identify usage timestamps.
+- [ ] Investigate model switching.
+- [ ] Investigate retry and compaction behavior.
+- [ ] Validate duplicate handling across active and archived records.
+
+### Critical Accounting Rule
+
+Do not add cumulative session totals to individual turn usage.
+
+If both cumulative and per-turn usage are available, choose a consistent authoritative source and use the other for reconciliation.
+
+### Exit Criteria
+
+Codex usage event semantics and model attribution are verified.
+
+---
+
+# Phase 6 — Codex CLI Adapter
+
+**Priority: P0**
+
+## Objective
+
+Implement the smallest possible Codex-specific collector.
+
+### Responsibilities
+
+The adapter should:
+
+1. Discover Codex session files.
+2. Read relevant rollout events.
+3. Extract token usage.
+4. Identify the active model for each usage event.
+5. Identify provider metadata where available.
+6. Extract stable source identifiers.
+7. Normalize event timestamps.
+8. Pass usage records to the existing shared pipeline.
+
+### Reuse Requirements
 
 Reuse:
 
-- Normalization
-- Deduplication
-- Database persistence
-- Historical import
-- Synchronization
-- Aggregation
+- Existing collector interface
+- JSONL utilities
+- Incremental file scanning
+- Shared normalization
+- Shared deduplication
+- Shared persistence
+- Shared aggregation
 
-Only extend these services when Cline introduces a requirement they cannot currently handle.
+### Codex-Specific Considerations
 
-Important cases:
+**Cumulative token counters**
 
-- Multiple models in one session
-- Provider-specific identifiers
-- Streaming or updated usage records
-- Retries
-- Subagent usage
-- Session-level versus request-level totals
-- Overlapping token categories
+Determine whether `last_token_usage` is available and reliable.
 
-Avoid double counting.
+If only cumulative usage exists, derive nonnegative increments only when the source semantics and counter continuity are verified.
 
-Preserve raw usage information where needed to support future compatibility.
+Handle counter resets and missing events without fabricating usage.
 
-## 7. Phase 4 — Extend Existing Database
+**Model attribution**
 
-**Status: done, with no schema change.** One `usage_events` table already holds
-both platforms: `platform` plus the unique `(platform, source_event_id)`
-constraint is what keeps Cline's `{session}:{message}` id from colliding with
-OpenCode's bare `message.id`, and `usage_status` plus nullable counts is how
-completeness is recorded. No column was missing, so no migration was written.
+Associate usage with the correct model context.
 
-The audit turned up two defects that were fixed here:
+If model context is missing, preserve the usage but mark model attribution as unknown.
 
-- Nothing created the schema, so a fresh install answered `/api/health` with
-  200 and then failed every usage query with `no such table: usage_events`.
-  `database/schema.py` now prepares the schema at startup, creating only tables
-  that are missing and never touching stored rows.
-- `alembic/env.py` overwrote an explicitly supplied database URL with the one
-  from settings, so migrations could only ever target the configured default.
+**Archived sessions**
 
-`tests/test_schema_migrations.py` builds a database both ways — by running the
-migrations and from the ORM metadata — and fails if the two ever disagree, which
-is what would silently break existing installations after a model change.
+Avoid counting a session twice when records exist in multiple locations.
 
-Use the existing database and usage tables.
+**Compaction and retries**
 
-Check whether the current schema already supports:
+Ensure that compaction, resumed sessions, and repeated token events do not inflate totals.
 
-- Multiple platforms
-- Provider identifiers
-- Model identifiers
-- Session identifiers
-- Stable usage event identifiers
-- Input tokens
-- Output tokens
-- Timestamps
-- Data completeness
+### Exit Criteria
 
-If all fields exist, do not change the schema.
+Codex CLI usage is collected through the existing pipeline and stored in the existing database.
 
-If fields are missing, introduce only the necessary backward-compatible migrations.
+---
 
-Preserve all existing OpenCode records.
+# Phase 7 — Codex CLI Provider Compatibility
 
-Ensure Cline and OpenCode events cannot collide even if their source identifiers match.
+**Priority: P1**
 
-## 8. Phase 5 — Extend Existing Synchronization
+## Objective
 
-**Status: done.** Registration already existed; what was missing was anything to
-*run* it. Starting the server previously imported nothing — collection happened
-only when the rescan endpoint was called.
+Support native OpenAI models and compatible third-party providers.
 
-- `sync/coordinator.py` runs every registered collector, one platform at a time,
-  each in its own session. A platform whose data is absent is skipped rather than
-  recorded as an error, because not having Cline installed is a normal state. A
-  platform that fails never stops the others.
-- `sync/scheduler.py` runs a pass at startup and then on `sync_interval_seconds`.
-  Scans run in a worker thread so a cold history cannot block the API, and
-  shutdown is cooperative: the scheduler waits on an event, so closing the
-  server neither waits out the interval nor starts another pass.
-- The manual rescan endpoint is unchanged and still works alongside it.
+### Target Providers
 
-Both settings (`sync_enabled`, `sync_interval_seconds`) exist so a test or a
-headless run can turn automatic collection off.
+- OpenAI
+- OpenRouter
+- DeepSeek
+- GLM / Z.AI
+- Kimi / Moonshot
+- Compatible OpenAI-style gateways
+- Compatible local model providers
 
-Platforms were scanned sequentially in this phase. That was a safe first step, not
-a settled design: only the *write* has to be serialised, since SQLite permits one
-writer, and parallel collection is both safe and faster. Phase 9 tracks that
-work.
+### Requirements
 
-Register the Cline collector with the existing collection mechanism.
+- [ ] Detect configured provider metadata where reliable.
+- [ ] Preserve original model identifiers.
+- [ ] Support model switching.
+- [ ] Support provider switching.
+- [ ] Handle provider aliases.
+- [ ] Reuse existing provider normalization.
+- [ ] Avoid provider inference based only on model names.
+- [ ] Avoid credential collection.
+- [ ] Preserve unknown provider values.
+
+### Compatibility Rule
+
+Do not assume that every provider exposes the same token usage fields.
+
+The tracker must use the token information recorded by Codex and label missing or incomplete usage appropriately.
+
+### Exit Criteria
+
+Codex native and supported third-party usage is correctly attributed wherever reliable metadata exists.
+
+---
+
+# Phase 8 — Shared Database and Synchronization
+
+**Priority: P0**
+
+## Objective
+
+Register Claude Code and Codex CLI with the existing persistence and synchronization infrastructure.
+
+### Database
+
+Reuse the existing database.
+
+Only introduce migrations if necessary.
+
+Do not create:
+
+- A Claude-only database
+- A Codex-only database
+- Separate usage tables without a demonstrated need
+- Duplicate persistence services
+
+### Synchronization
 
 Reuse existing:
 
-- Startup discovery
-- Historical scans
+- Historical import
+- File monitoring
 - Periodic reconciliation
-- File monitoring, where applicable
-- Synchronization checkpoints
-- Error handling
+- Sync checkpoints
+- Error recovery
+- Record upserts
 
-Add only Cline-specific source discovery and change detection.
+### Tasks
 
-Ensure:
+- [ ] Register Claude collector.
+- [ ] Register Codex collector.
+- [ ] Preserve existing OpenCode registration.
+- [ ] Preserve existing Cline registration.
+- [ ] Support independent collector failures.
+- [ ] Support historical backfill.
+- [ ] Support incremental updates.
+- [ ] Prevent duplicate records.
+- [ ] Preserve imported history after source deletion.
 
-- Both collectors can operate independently.
-- Failure in Cline collection does not stop OpenCode collection.
-- Application restarts do not duplicate records.
-- Imported history survives source deletion.
+### Exit Criteria
 
-## 9. Phase 6 — Extend Existing Analytics
+All four collectors use the same storage and synchronization infrastructure.
 
-**Status: done, with one correction.** No Cline-specific aggregation was written.
-The shared summary, timeline, and breakdown functions already read normalized rows
-from any platform, and the API already accepted `platform`, `provider_id`, and
-`model_id` on every usage endpoint, so all three views and all six metrics work
-for Cline as they do for OpenCode.
+---
 
-What was wrong was the model breakdown's group key. It grouped by
-`(provider_id, model_id)`, so two platforms serving the same model name would have
-been merged into one row with no way to tell whose usage it was — the exact
-attribution error the platform column exists to prevent, and the plan requires
-platform in that table. The key is now `(platform, provider_id, model_id)` and
-every breakdown row names its platform.
+# Phase 9 — Shared Analytics, API, and Dashboard
 
-`tests/test_analytics_platforms.py` proves the three views and six metrics per
-platform, that a breakdown reconciles with its summary, that unreported Cline
-usage is surfaced as incomplete rather than counted as zero, and that bucketing
-follows the requested timezone.
+**Priority: P1**
 
-Measured against the live stores: Cline 189,250,734 tokens across 2,142 requests
-with 28 unreported, matching its breakdown exactly, and the combined figure is
-the sum of the two platforms.
+## Objective
 
-Reuse all existing time-based and model-based aggregation logic.
+Expose Claude Code and Codex usage through the existing analytics system.
 
-Add platform filtering if not already supported.
+### Reuse Requirements
 
-Required views:
+Reuse existing:
 
-- OpenCode only
-- Cline CLI only
-- All supported platforms
+- Daily aggregation
+- Monthly aggregation
+- Yearly aggregation
+- All-time aggregation
+- Model breakdown
+- Provider breakdown
+- Platform breakdown
+- Date filtering
+- API endpoints
+- Dashboard charts
 
-Required metrics:
+### Required Changes
 
-- Daily token usage
-- Monthly token usage
-- Yearly token usage
-- All-time token usage
-- Model-wise token usage
-- Input and output token breakdown
+Only add functionality that is currently missing:
 
-Do not create Cline-specific aggregation functions if the existing shared aggregation functions can handle its normalized records.
+- Claude Code platform registration
+- Codex CLI platform registration
+- Platform filter options
+- Collector status indicators
+- Provider/model display compatibility
 
-## 10. Phase 7 — Extend Existing API and Dashboard
+### Dashboard Requirements
 
-**Status: done, with three defects fixed.** The API needed nothing new — it
-already accepted `platform` on every usage endpoint, and Phase 6 put the platform
-in each model-breakdown row. The dashboard could not reach any of it.
+The existing dashboard must display:
 
-- **Platform filter.** `filters.platform` existed in state and was already sent to
-  the charts and the breakdown, but nothing could set it, so the page could only
-  ever show combined totals. A platform dropdown was added beside the existing
-  provider and model ones, deriving its options the same way they do: from the
-  unfiltered model breakdown, so a newly added assistant appears without a
-  frontend change.
-- **Platform column in the model breakdown**, added to the row key so the same
-  model name reached through two platforms stays two rows.
-- **The headline cards ignored the filters entirely.** `MetricsCards` accepted
-  only a timezone, so narrowing to one platform changed every chart and left the
-  four big numbers showing all platforms — the figures looked at first were the
-  ones ignoring the filter. The cards now carry the same platform, provider, and
-  model filters as the panels below them.
+- OpenCode
+- Cline CLI
+- Claude Code
+- Codex CLI
+- Combined token consumption
 
-Two further problems were found and fixed in passing. The tracking panel labelled
-every collector's row "OpenCode", so Cline's row claimed OpenCode had been
-detected; it now reads "Detection", with the platform named in its heading. And
-platform display names were derived per component, so the filter dropdown and the
-breakdown table could disagree about how a platform is spelled; both now use one
-`platformLabel` helper that falls back to the raw id for a platform added later.
+Do not build separate dashboards for Claude and Codex.
 
-**Not built:** the platform comparison chart in plan §5.4. It is the one item
-here needing new visualisation rather than wiring, and the per-platform filter
-plus the breakdown column cover the same need for now.
+### Exit Criteria
 
-Reuse the existing API endpoints and dashboard components.
+All four platforms are visible in the existing dashboard, with correct combined and filtered totals.
 
-Modify only what is necessary to:
+---
 
-- Display Cline as a supported platform.
-- Filter usage by platform.
-- Show combined OpenCode and Cline totals.
-- Display Cline collector status.
-- Show model-wise Cline usage.
+# Phase 10 — Testing and Regression Validation
 
-Do not create separate Cline pages unless the existing interface cannot reasonably represent the required information.
+**Priority: P0 before release**
 
-Preserve current OpenCode dashboard behavior.
+## Claude Code Tests
 
-## 11. Phase 8 — Testing and Regression Validation
+- [ ] Default storage discovery.
+- [ ] Custom storage discovery.
+- [ ] JSONL parsing.
+- [ ] Historical import.
+- [ ] Input/output token extraction.
+- [ ] Cache accounting.
+- [ ] Duplicate message handling.
+- [ ] Model switching.
+- [ ] Provider switching.
+- [ ] Subagent usage.
+- [ ] Missing usage fields.
+- [ ] Interrupted sessions.
 
-**Status: done.** Every item below was audited against the tests that actually
-exist rather than assumed. Each was already covered except the two marked
-**new**, which were written for this phase because they were implied rather than
-stated: free and paid models being treated identically (plan §4.4), and both
-collectors demonstrably sharing one normaliser (Phase 3). Both are now mutation-
-checked — dropping a free-tier model or folding Cline's cache into its per-call
-total each fails the suite.
+## Codex CLI Tests
 
-### Cline-Specific Tests
+- [ ] Default storage discovery.
+- [ ] Custom storage discovery.
+- [ ] Active session parsing.
+- [ ] Archived session parsing.
+- [ ] Token event parsing.
+- [ ] Cumulative counter handling.
+- [ ] Per-turn usage handling.
+- [ ] Model context attribution.
+- [ ] Provider identification.
+- [ ] Model switching.
+- [ ] Session compaction.
+- [ ] Retry handling.
+- [ ] Duplicate prevention.
 
-- [x] Cline storage discovery. → `test_locator.py`, `test_discovery_works_without_a_session_index`
-- [x] Historical session parsing. → `test_history_returns_one_record_per_assistant_message`
-- [x] Model identification. → `test_record_carries_provider_model_and_session_identity`
-- [x] Provider identification. → same, plus `test_two_providers_serving_one_model_name_stay_distinct`
-- [x] Input token extraction. → `test_token_fields_follow_the_phase_1_field_map`
-- [x] Output token extraction. → same
-- [x] Model switching. → `test_model_switching_attributes_each_record_to_its_own_model`
-- [x] Multiple providers. → `test_multiple_models_in_one_session_stay_separate`, and the two-provider case above
-- [x] **Free and paid models where usage is available.** → **new**: `test_phase8_checklist.py`
-- [x] Subagent accounting. → `test_a_subagent_session_is_attributed_to_its_own_session_and_model`
-- [x] Retry handling. → `test_a_retried_call_keeps_the_failure_and_the_success_apart`
-- [x] Incomplete usage. → `test_error_display_is_stored_as_unavailable`, `test_missing_usage_is_stored_as_unknown_and_kept_out_of_totals`
-- [x] Duplicate prevention. → `test_resume_duplicate_ids_stay_distinct_per_session`, `test_a_resumed_session_copy_is_stored_separately_without_double_counting`
+## Shared Regression Tests
 
-### Shared Integration Tests
+- [ ] OpenCode remains functional.
+- [ ] Cline CLI remains functional.
+- [ ] Existing data is preserved.
+- [ ] All collectors share the same database.
+- [ ] All collectors use shared normalization.
+- [ ] All collectors use shared deduplication.
+- [ ] All collectors use shared aggregation.
+- [ ] Combined totals are correct.
+- [ ] Platform filters are correct.
+- [ ] Model filters are correct.
+- [ ] Provider filters are correct.
+- [ ] Application restarts do not duplicate records.
 
-- [x] OpenCode and Cline use the same database. → `test_both_collectors_share_one_database`
-- [x] Both use the same normalization pipeline. → **new**: `test_identical_usage_normalizes_identically_on_both_platforms`, and the cache and missing-usage cases beside it
-- [x] Both use the same aggregation logic. → `test_platform_filtering_separates_the_two_sources`, `test_analytics_platforms.py`
-- [x] Platform filtering works. → `test_the_combined_view_adds_both_platforms` and the per-platform cases
-- [x] Combined totals are correct. → `test_each_platform_can_be_viewed_on_its_own`, `test_the_model_breakdown_reconciles_with_the_combined_summary`
-- [x] Synchronization is independent per platform. → `test_each_platform_resumes_from_its_own_checkpoint`, `test_a_failing_collector_does_not_stop_the_others`
-- [x] Existing OpenCode history remains intact. → `test_cline_sync_leaves_opencode_history_intact`
-- [x] Existing OpenCode tests continue passing. → 412 backend tests, green on every commit
+### Exit Criteria
 
-**Not covered, deliberately.** No test runs both collectors against the *live*
-stores on every run — those are the learning tests, which skip when a store is
-absent so the suite stays green on a machine without both assistants. The
-cross-platform guarantees are therefore proven against stand-in stores, which is
-what makes them deterministic.
+All critical tests pass, and existing integrations remain functional.
 
-## 12. Phase 9 — Collection Performance
+---
 
-**Status: A0–A3 done.** The design, the measurements behind it, and the rollout
-order are in [`parallelism.md`](parallelism.md).
+# Phase 11 — Final Optimization and Release
 
-Scope in one line: make a collection pass cheap enough that the sync interval can
-drop from five minutes to about one, without changing what is stored.
+**Priority: P1**
 
-- **A0 — done.** OpenCode was running `opencode debug paths` on every scan and
-  every status view, spending ~590 ms asking where a directory is. The answer is
-  now resolved once per collector and reused. Measured: an OpenCode scan went
-  from **900 ms to 276 ms**, and the collector status endpoint from 759 ms to
-  194 ms.
-- **A1 — done.** Re-importing history issued one `UPDATE` per row, costing
-  1,125 ms for 2,142 records. The whole batch now goes out as a single
-  `INSERT … ON CONFLICT DO UPDATE`, measured at **71 ms** — a sixteen-fold
-  improvement on the path a manual rescan pays every time.
-- **A2 — done.** Every scan copied OpenCode's whole database before reading it
-  (~172 ms). The copy is now reused while the source is unchanged: the tracking
-  status view went from **194 ms to 7 ms**. The fingerprint includes the
-  write-ahead log, because OpenCode runs in WAL mode and new usage lands there
-  while the main file looks untouched — ignoring that would reuse a copy missing
-  the very records it was asked to find.
-- **A3 — done.** The daily timeline took 43 ms because finding a row's bucket
-  scanned every bucket edge from the start, once per row. A binary search over the
-  same edges brought it to **8.2 ms**, with buckets identical before and after,
-  including across daylight-saving transitions.
-- **Phase B — held.** Parallel collection across Cline's batches. Held on
-  2026-10-12 at the owner's direction, after the gate came out against it: with
-  phase A complete a full collection pass costs 206 ms, and B would save about
-  43 ms of that — in exchange for a process pool, a batching contract, a
-  single-writer commit barrier and a conformance suite, permanently. The design
-  is ready and nothing in it has been disproved; the conditions that would
-  reopen it are recorded in `parallelism.md` §13.
+## Objective
 
-**Where phase 9 leaves things.** Collection, both platforms, measured on the live
-stores: **948 ms → 206 ms**. Status view when idle: **759 ms → 7 ms**. Re-importing
-5,053 records: **~2,600 ms → 169 ms**. None of it needed parallelism — phase A
-removed fixed per-scan cost, which is what actually dominated.
+Minimize maintenance overhead and release Claude Code + Codex CLI support.
 
-## 13. Implementation Priority
+### Code Reuse Review
 
-| Priority | Task | Action |
+Before release, verify:
+
+- No duplicate normalization engine was created.
+- No duplicate deduplication engine was created.
+- No duplicate database was created.
+- No duplicate API layer was created.
+- No duplicate dashboard was created.
+- Existing utilities were reused where compatible.
+- Platform-specific logic remains isolated.
+- Shared changes are backward-compatible.
+- New dependencies are justified.
+- Unnecessary abstractions were avoided.
+
+### Release Requirements
+
+- [ ] Automatic Claude Code detection.
+- [ ] Automatic Codex CLI detection.
+- [ ] Historical usage import.
+- [ ] Incremental usage tracking.
+- [ ] Native model support.
+- [ ] Compatible third-party provider support.
+- [ ] Accurate token totals.
+- [ ] Unified dashboard.
+- [ ] Local-only operation.
+- [ ] No provider API keys required.
+- [ ] No configuration changes required.
+- [ ] Existing integrations preserved.
+
+---
+
+## 4. Recommended Implementation Order
+
+| Order | Work | Code Strategy |
 |---|---|---|
-| P0 | Audit existing repository | Inspect |
-| P0 | Validate Cline storage | Research |
-| P0 | Cline collector | New |
-| P0 | Token mapping | New adapter / reuse shared normalization |
-| P0 | Shared persistence | Reuse / extend |
-| P0 | Deduplication | Reuse / extend |
-| P0 | Synchronization | Reuse / extend |
-| P0 | Usage aggregation | Reuse |
-| P1 | API platform support | Reuse / extend |
-| P1 | Dashboard platform support | Reuse / extend |
-| P0 | Cline and OpenCode regression tests | Extend |
-| P1 | Collection performance | Phase A done; phase B held — [`parallelism.md`](parallelism.md) |
+| 1 | Audit existing codebase | Inspect, don't rebuild |
+| 2 | Validate shared interfaces | Reuse or minimally extend |
+| 3 | Research Claude storage | Verify data source |
+| 4 | Add Claude collector | Minimal new adapter |
+| 5 | Validate Claude providers | Reuse shared provider logic |
+| 6 | Research Codex storage | Verify event semantics |
+| 7 | Add Codex collector | Minimal new adapter |
+| 8 | Validate Codex providers | Reuse shared provider logic |
+| 9 | Register both collectors | Reuse existing synchronization |
+| 10 | Update dashboard | Extend existing UI |
+| 11 | Run regression tests | Preserve completed integrations |
+| 12 | Release | One unified application |
 
-## 14. Definition of Done
+---
 
-Cline integration is complete when:
+## 5. Minimum New Components
 
-- [x] Cline CLI usage is collected automatically. → startup pass plus `sync_interval_seconds`, verified on the live stores
-- [x] Available historical usage is imported. → 2,142 records on first run
-- [x] Token counts are attributed to the correct models. → per-message attribution; 12 model rows across both platforms
-- [x] Multiple providers are supported. → provider recorded per row; two providers sharing a model name stay distinct
-- [x] Daily, monthly, yearly, and all-time totals work. → `test_analytics_platforms.py`, 20 tests over both platforms
-- [x] Cline usage appears in the existing dashboard. → platform filter, platform column, and a row per platform in the tracking panel
-- [x] Combined OpenCode and Cline totals work. → combined equals the sum of the two, to the token
-- [x] Existing shared components are reused wherever compatible. → no shared service changed in phase 3 or 6; the collector is the only Cline-specific code
-- [x] No unnecessary duplicate services are introduced. → one normalizer, one database, one scheduler, one set of endpoints
-- [x] No separate application or database is created. → `usage_events` and `collector_state` in one SQLite file
-- [x] No API keys or proxy configuration are required. → `providers.json` is never opened
-- [x] Existing OpenCode functionality remains intact. → its checkpoint, schema and tests untouched; still collecting 12,773,659 tokens
-- [x] Regression tests pass. → 448 backend, 59 frontend, ruff and mypy clean
+The expected new code should primarily consist of:
 
-## 15. Final Instruction to the Coding Agent
+**Claude Code**
 
-**This task is an incremental integration into an existing codebase.**
+- Storage discovery
+- Session JSONL parsing
+- Claude-specific usage mapping
+- Provider metadata extraction
+- Tests
 
-Before writing code, inspect the repository and understand how OpenCode token tracking is currently implemented.
+**Codex CLI**
 
-Reuse all compatible existing functionality.
+- Storage discovery
+- Rollout JSONL parsing
+- Token event interpretation
+- Model/provider context extraction
+- Tests
 
-Implement only the Cline-specific components and minimal shared changes required for compatibility.
+**Shared changes only when necessary**
 
-Do not create parallel infrastructure for Cline — meaning a Cline-only fork of
-something that already exists. Shared infrastructure that every platform uses is
-the opposite of that, and is what Phase 9 adds.
+- Collector registration
+- Additional token field handling
+- Provider metadata normalization
+- Platform filtering
+- Compatibility migrations
 
-Do not rewrite existing functionality merely to introduce a new platform.
+The exact files and line count depend on the existing repository.
 
-If an existing component is too tightly coupled to OpenCode, refactor it into a shared component only when necessary, while preserving backward compatibility.
+Do not create new files merely to match this suggested organization if the existing structure already supports the functionality.
 
-The desired result is:
+---
 
-**One unified token tracker with OpenCode and Cline CLI integrations, sharing the same database, processing pipeline, backend, analytics, and dashboard.**
+## 6. Definition of Done
+
+The implementation is complete when:
+
+- [ ] OpenCode remains completed and functional.
+- [ ] Cline CLI remains completed and functional.
+- [ ] Claude Code usage is automatically collected.
+- [ ] Codex CLI usage is automatically collected.
+- [ ] Historical usage is imported where available.
+- [ ] Native models are tracked.
+- [ ] Compatible third-party providers are tracked.
+- [ ] Daily, monthly, yearly, and all-time usage works.
+- [ ] Platform-wise usage works.
+- [ ] Provider-wise usage works.
+- [ ] Model-wise usage works.
+- [ ] Duplicate counting is prevented.
+- [ ] Existing shared components are reused.
+- [ ] No parallel infrastructure is introduced. *(True today. `parallelism.md`
+      phase B is held; §4–§7 of that document describe a design, not code that
+      exists. If the hold is ever lifted, this item needs revisiting rather than
+      being read as a standing prohibition — the hold's own reopen conditions are
+      in `parallelism.md` §13, and rescoping to four platforms has already
+      satisfied one of them.)*
+- [ ] No API keys or proxies are required.
+- [ ] No existing coding assistant configuration is modified.
+- [ ] Existing OpenCode and Cline functionality is preserved.
+- [ ] Regression tests pass.
+
+---
+
+## 7. Mandatory Instructions for the Coding Agent
+
+You are working inside an existing production-oriented codebase.
+
+OpenCode and Cline CLI integrations are already completed.
+
+Your task is to extend the existing application with Claude Code and Codex CLI support.
+
+**Do not treat this as a greenfield project.**
+
+Before making any code changes:
+
+1. Inspect the existing repository.
+2. Understand the existing OpenCode and Cline collectors.
+3. Identify shared services and utilities.
+4. Determine which existing functions can be reused.
+5. Identify only the minimum necessary changes.
+6. Produce a concise reuse assessment.
+
+During implementation:
+
+- Reuse existing code wherever compatible.
+- Avoid unnecessary refactoring.
+- Avoid duplicated services.
+- Avoid new dependencies unless necessary.
+- Keep Claude and Codex parsing platform-specific.
+- Keep analytics and persistence shared.
+- Preserve backward compatibility.
+- Implement and test one platform at a time.
+- Do not change existing user configurations.
+- Do not collect API keys, prompts, or source code.
+
+If an existing abstraction is insufficient, make the smallest backward-compatible extension that supports the new platform.
+
+**Do not implement a second token tracker inside the existing token tracker.**
+
+---
+
+## 8. Final Goal
+
+Extend the completed OpenCode + Cline CLI token tracker to support Claude Code and Codex CLI with native and compatible third-party models.
+
+The implementation must use one shared architecture, one database, one processing pipeline, one backend, and one dashboard.
+
+The primary development objective is:
+
+**Maximum reuse + minimum new code + accurate token tracking + zero regression in existing integrations.**

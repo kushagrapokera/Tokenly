@@ -1,8 +1,12 @@
 # Parallelism.md — making collection fast, and keeping it fast as platforms are added
 
 **Status:** phase A (A0–A3) is implemented and measured (see §1 and §13). **Phase B
-is held** at the owner's direction as of 2026-10-12 — see §13, where the decision,
-its reasoning, and the conditions that would reopen it are recorded.
+is held** — see §13, where the decision, its reasoning, and the conditions that
+reopen it are recorded.
+
+The hold is **under review**: `plan.md` was rescoped to four platforms on
+2026-10-12, which satisfies one of those conditions. §4–§7 describe a design that
+does not exist in code; read them as plan, not as API.
 
 **Scope:** how collection and storage of usage records gets faster today, and how
 the same design keeps working when Claude, Codex, Antigravity and others are
@@ -148,6 +152,15 @@ Step B6 exists to measure them.
 
 ## 4. Contracts
 
+> **Nothing in this section exists in the codebase.** `CollectorBatch`,
+> `iter_batches()`, `sync/executor.py` and the `outcome=` keyword are all part of
+> phase B, which is **held** (§13). They are written out here because a held plan
+> still has to be specific enough to act on later, not because they are built.
+> Current code has no batching concept at all: every collector returns one
+> `ScanOutcome` and `SyncService` writes it in one transaction.
+>
+> Read this as design, not as documentation of what you can import today.
+
 ### 4.1 One new dataclass, in the module that already owns the collector interface
 
 ```python
@@ -220,7 +233,7 @@ need both.
 
 ---
 
-## 5. Execution flow
+## 5. Execution flow — **design, not implemented**
 
 The coordinator gains a batching path; `SyncService` keeps owning the scan, and
 every part of it that already works is reused untouched.
@@ -255,6 +268,11 @@ Everything already written stays:
 ---
 
 ## 6. Correctness: the part that must not be got wrong
+
+> These rules would govern phase B if it were reopened. Two of them — order
+> independence and idempotence — already hold in the current code and are
+> pinned by existing tests; the batch-failure rule in §6.2 is new logic that
+> would have to be written and tested at that time.
 
 Parallel collection creates a failure mode that does not exist today — a
 *partial* scan. Three rules follow from the existing design:
@@ -301,7 +319,7 @@ counting.
 
 ---
 
-## 7. Process pool lifecycle
+## 7. Process pool lifecycle — **design, not implemented**
 
 A pool is created **once** at application startup and reused. Forking
 interpreters per scan (every 300 s) would discard the gains.
@@ -377,23 +395,42 @@ any deployment, which is why they are the parts worth testing hardest.
 
 ## 11. New platforms: the checklist this design has to satisfy
 
-Adding a provider must require **only** the collector contract. Nothing in
+Adding a platform must require **only** the collector contract. Nothing in
 `sync/` or `main.py` may change. Concretely, a new Claude or Codex collector needs:
 
 1. `platform`, `discover()`, `collect_history()`, `collect_updates()` — as today.
-2. Optionally override `iter_batches()` to be parallelised. **Optional.** A
-   collector that does not override it still works, just as one batch. Cline is
-   the only current platform that overrides it; a new one inherits a working
-   sequential path for free.
-3. Register it in `collectors/registry.py`. One line.
+2. Optionally override `iter_batches()` to be parallelised — **but only if phase
+   B is ever reopened.** No platform overrides it today, because none of them
+   need to: every collector currently runs as a single batch, and that is the
+   correct state, not a gap. A new collector inherits the working sequential
+   path for free either way.
+3. Override `refresh()` if it caches anything about where its data lives.
+   `OpenCodeCollector` does, because it caches a resolved path; a collector with
+   nothing cached inherits the no-op default.
+4. Register it in `collectors/registry.py`. One line.
+
+**Verified against the Cline integration**, which is the only one that has been
+built to this point: `collectors/cline/collector.py` implements five methods —
+`platform`, `discover`, `collect_history`, `collect_updates`, `collect_scan` —
+and registration cost one line in `collectors/registry.py`. It changed no shared
+service.
 
 It must **not** need to know about: workers, queues, snapshots, checkpoints,
 transactions, or the coordinator. Those stay behind the contracts in §4.
 
-The test that enforces this is a *conformance suite* (B6): a fake third platform
-written against the public contract alone, run through the real scheduler, must
-collect correctly with no changes to `sync/`. If adding a platform ever requires
-editing the executor, this design has leaked and should be corrected.
+**What adding a platform will legitimately require, which is not this
+document's business.** The Cline integration needed no changes to `sync/`, and
+the same should hold for Claude and Codex. But the *plan* for those platforms
+asks for things the shared layer does not have yet — `plan.md` §8.3 wants usage
+grouped by provider alone, and §8.5 wants a provider comparison chart. Neither
+exists: `aggregation/` has `breakdown_by_model` and nothing else. That is new
+shared work, driven by the requirements rather than by the platform count, and it
+belongs in `implementation.md` rather than here. Nothing in it needs the executor.
+
+The test that would enforce this is a *conformance suite* (B6), which does not
+exist because phase B is held. Until it does, the guarantee rests on the Cline
+integration having needed no changes to `sync/` — which is evidence from one
+example, not a test.
 
 ---
 
@@ -576,19 +613,45 @@ Phase A removed 742 ms of fixed cost with no new machinery. B would add real
 machinery for 43 ms of variable cost. **The measurements said stop, so it is
 held.**
 
-**What would reopen it.** Any one of these, re-measured rather than assumed:
+#### Reopening after the 2026-10-12 rescope to four platforms
 
-- A full collection pass rising past roughly a second again — for instance if a
-  future platform's store grows large enough that scanning it dominates.
-- Cline's history growing several times over, so its per-scan parse cost stops
-  being small.
-- A new platform with many independent units — more platforms make a flat work
-  queue pay off where two do not.
-- The sync interval dropping to seconds, which turns per-pass cost from a rounding
-  error into something continuous.
+`plan.md` now targets **Claude Code and Codex CLI**, taking the platform count
+from two to four. That satisfies one of the reopen conditions above — "a new
+platform with many independent units" — so the hold is **under review**, not
+settled. What has and has not changed:
 
-Until one of those is true, the honest position is that B is insurance against
-growth, not a fix for a problem being felt now.
+**What has not changed.** The decision rule. The lesson in `LESSONS.md` is that
+fixed cost dominated, not variable cost, and that is a property of how these
+tools store data rather than of how many platforms there are. Two more platforms
+means two more chances to repeat the OpenCode mistake, and that risk is entirely
+unmeasured. **A Codex or Claude Code collector that spawns a subprocess to locate
+its store would cost more than every millisecond phase B could ever save.** If
+either does, fix that first — it is the same fix, and it is worth an order of
+magnitude more.
+
+**What has changed.** Sequential collection now runs four jobs instead of two, so
+the cost that phase B targets is roughly double in absolute terms. On the measured
+per-platform figures, and *labelled a projection because two of the four
+collectors do not exist yet*: a four-platform pass lands around 400–480 ms
+sequential, against roughly 200 ms if the two variable-heavy ones ran
+concurrently. That is a bigger prize than the 43 ms that justified holding, which
+is why this is a live question rather than a formality.
+
+**What would settle it, and when.** Not now — there is nothing to measure until
+the Claude and Codex collectors exist. Phase 1 of `implementation.md` (storage
+discovery) is the first point at which a real answer is available, and it should
+measure each new collector's **fixed and variable split separately**, which is
+the question `LESSONS.md` says to ask first. Concretely:
+
+| New finding | What it implies for B |
+|---|---|
+| A new collector has a large fixed cost (subprocess, copy, probe) | Fix the fixed cost first, as A0 and A2 did. B is irrelevant until it is gone |
+| Both new collectors are variable-heavy like Cline, with little fixed cost | B's case is real. Revisit with fresh numbers before writing any code |
+| Either store is large enough that scanning dominates | B's case is strongest. Revisit with fresh numbers |
+
+Until then the hold stands, and the arithmetic above is a projection rather than
+a measurement — labelled as such deliberately, since the whole point of
+`LESSONS.md` is not to quote a number that was not measured.
 
 ---
 

@@ -2,96 +2,346 @@
 
 ## 1. Project Overview
 
-Build a local-first, unified AI token usage tracking platform that allows developers to monitor token consumption across different AI coding assistants, models, and providers.
+Build a unified, local-first AI token usage tracking platform that automatically monitors token consumption across different AI coding assistants, model providers, and AI models.
 
-The platform must track usage independently of the API keys, subscriptions, or model providers configured within each coding assistant.
+The platform allows users to understand their token consumption without modifying their existing coding assistant configurations.
 
-The project is being developed incrementally, with one platform integration completed at a time.
+The project follows an incremental integration approach, reusing existing functionality whenever possible.
 
-**Current state: OpenCode and Cline CLI are both complete** (see §2 and §9). One
-dashboard visualisation is still outstanding — platform usage comparison, §5.4.
+**Completed integrations:**
+- OpenCode
+- Cline CLI
+
+**Current integrations:**
+- Claude Code
+- Codex CLI
+
+**Primary goal:** Extend the existing application to support Claude Code and Codex CLI, including their native models and supported third-party providers.
 
 ---
 
 ## 2. Platform Integration Status
 
-| Platform | Status | Priority |
+| Platform | Status | Scope |
 |---|---|---|
-| OpenCode | ✅ Done | Completed |
-| Cline CLI | ✅ Done | Completed |
-| Codex CLI | ⏳ Planned | Future |
-| Claude Code | ⏳ Planned | Future |
-| Antigravity | ⏳ Planned | Future |
-| FreeBuff | ⏳ Planned | Future |
+| OpenCode | ✅ COMPLETED | Existing integration |
+| Cline CLI | ✅ COMPLETED | Existing integration |
+| Claude Code | 🔄 PLANNED FOR IMPLEMENTATION | Current scope |
+| Codex CLI | 🔄 PLANNED FOR IMPLEMENTATION | Current scope |
+| Antigravity | ⏳ FUTURE | Not included |
+| FreeBuff | ⏳ FUTURE | Not included |
 
-**Cline CLI is complete**, verified against the live stores: all 21 success
-criteria in §9 pass, both platforms collect automatically, and the dashboard
-filters by platform. Two items remain open, neither blocking:
+### Completed Integrations
 
-1. **Platform usage comparison** (§5.4) is the one visualisation not built. It
-   needs new UI rather than wiring, so it was deferred in Phase 7 in favour of
-   the per-platform filter and the platform column, which answer the same
-   question a click apart.
-2. **Phase B** of the performance plan is held — deliberately, not unfinished. See
-   `parallelism.md` §13 for the measurement behind it and the conditions that
-   would reopen it.
+**OpenCode — DONE**
 
-Adding a further platform now requires only the collector contract; see
-`parallelism.md` §11.
+The existing OpenCode integration must remain functional.
 
-### Completed: OpenCode
+**Cline CLI — DONE**
 
-The OpenCode integration is marked as completed.
+The existing Cline CLI integration must remain functional.
 
-Its intended capabilities include:
-
-- Automatic collection of available token usage
-- Daily, monthly, and yearly token statistics
-- Model-wise token consumption
-- Multiple provider support
-- Free and paid model support
-- Historical usage tracking
-- Duplicate prevention
-- Local data persistence
-
-No additional OpenCode development is included in the current scope.
-
-### Completed: Cline CLI
-
-Cline CLI was added to the existing tracker rather than built as a separate one.
-It shares the database, the normalization pipeline, the aggregation, the API,
-and the dashboard; the only Cline-specific code is the collector itself
-(`collectors/cline/`) plus three lines registering it.
-
-It collects automatically on the same schedule as OpenCode, on its own
-checkpoint, so neither platform can block or corrupt the other.
+Neither completed integration should be rebuilt as part of the current project scope.
 
 ---
 
-## 3. Core Project Objectives
+## 3. Core Objectives
 
-The platform must provide three primary capabilities:
+The tracker must support:
 
-### 3.1 Platform-Wise Token Usage
+1. Automatic token collection from Claude Code and Codex CLI.
+2. Tracking token usage independently of the configured model provider.
+3. Daily, monthly, yearly, and all-time usage statistics.
+4. Model-wise token consumption within each platform.
+5. Provider-wise token consumption within each platform.
+6. Historical token usage import.
+7. Automatic tracking of new usage.
+8. Combined usage statistics across all completed integrations.
+9. Support for native and compatible third-party models.
+10. Minimal setup with no API keys or request proxies required.
 
-Track total tokens consumed by each supported AI coding platform independently.
+The tracker must use the existing shared analytics infrastructure wherever compatible.
 
-For example:
+---
 
-| Platform | Total Tokens |
-|---|---:|
-| OpenCode | 2,500,000 |
-| Cline CLI | 1,200,000 |
-| Combined | 3,700,000 |
+# 4. Claude Code Integration Requirements
 
-*Illustrative values.*
+## 4.1 Automatic Detection
 
-### 3.2 Time-Based Token Usage
+The tracker must automatically detect an existing Claude Code installation and locate available usage history.
 
-Track token consumption across:
+Requirements:
 
-- Today
-- Yesterday
+- Support Windows, Linux, and macOS.
+- Detect default and supported custom data locations.
+- Recognize supported Claude Code versions.
+- Identify available session records.
+- Detect new sessions automatically.
+- Operate without changing Claude Code configuration.
+- Operate without requiring Anthropic or third-party provider API keys.
+
+If Claude Code is not installed or its local history is unavailable, display the appropriate tracking status.
+
+## 4.2 Native Claude Model Support
+
+The tracker must support Claude models used through Claude Code.
+
+Model families may include:
+
+- Claude Opus
+- Claude Sonnet
+- Claude Haiku
+- Other supported Claude models
+
+Usage must be attributed to the actual model identifier recorded by Claude Code.
+
+Different versions of a model must remain distinguishable when their identifiers differ.
+
+## 4.3 Third-Party Provider Support
+
+The tracker must support compatible third-party model providers and gateways used with Claude Code.
+
+Target providers include:
+
+- Anthropic
+- OpenRouter
+- Amazon Bedrock
+- Google Vertex AI
+- DeepSeek
+- GLM / Z.AI
+- Kimi / Moonshot AI
+- Other compatible API gateways
+
+Support is conditional on the provider and model configuration actually being compatible with the installed Claude Code version.
+
+The tracker must not assume every model can be used directly through Claude Code.
+
+### Provider Requirements
+
+- Identify the configured provider when reliable local metadata is available.
+- Identify the actual model used.
+- Support provider-specific model identifiers.
+- Track usage without requiring provider credentials.
+- Support free and paid models where reliable usage metadata exists.
+- Avoid incorrect provider attribution.
+- Preserve unknown provider values when identification is not reliable.
+
+## 4.4 Claude Code Token Tracking
+
+Track:
+
+- Input tokens
+- Output tokens
+- Total tokens
+- Model identifier
+- Provider identifier
+- Session identifier
+- Usage timestamp
+
+Token usage must be attributed to the correct model, including sessions where model switching occurs.
+
+The tracker must distinguish actual token usage from estimates.
+
+## 4.5 Claude Code Historical Usage
+
+The tracker must:
+
+- Import available historical sessions.
+- Preserve original usage timestamps.
+- Track historical model usage.
+- Prevent duplicate imports.
+- Preserve imported records independently of Claude Code.
+- Handle incomplete or missing historical metadata.
+
+Historical tracking is limited to usage records that remain available and accessible.
+
+## 4.6 Claude Code Continuous Tracking
+
+The tracker must:
+
+- Automatically recognize new usage.
+- Support resumed sessions.
+- Support model switching.
+- Support provider switching.
+- Handle interrupted requests.
+- Handle updated usage records.
+- Resume tracking after application restarts.
+- Avoid duplicate token counting.
+
+---
+
+# 5. Codex CLI Integration Requirements
+
+## 5.1 Automatic Detection
+
+The tracker must automatically detect Codex CLI and locate available usage history.
+
+Requirements:
+
+- Support Windows, Linux, and macOS.
+- Detect default and supported custom storage locations.
+- Recognize supported Codex CLI versions.
+- Identify available session records.
+- Automatically track new sessions.
+- Require no changes to Codex CLI configuration.
+- Require no OpenAI or third-party provider API keys.
+
+## 5.2 Native OpenAI Model Support
+
+The tracker must support OpenAI models used through Codex CLI.
+
+This includes supported GPT and Codex-oriented models.
+
+Requirements:
+
+- Identify the actual model used.
+- Preserve model version distinctions.
+- Track input and output tokens.
+- Support model switching.
+- Support available historical usage.
+- Work independently of whether authentication uses a subscription or an API key.
+
+The tracker must not assume that subscription usage is equivalent to API billing usage.
+
+## 5.3 Third-Party Provider Support
+
+The tracker must support compatible third-party providers configured in Codex CLI.
+
+Target providers include:
+
+- OpenAI
+- OpenRouter
+- DeepSeek
+- GLM / Z.AI
+- Kimi / Moonshot AI
+- Other supported OpenAI-compatible providers
+- Compatible local model providers
+
+The actual supported combinations depend on the installed Codex CLI version and provider configuration.
+
+### Provider Requirements
+
+- Identify the actual provider where possible.
+- Identify the configured model.
+- Preserve provider-specific model names.
+- Support free and paid models.
+- Track usage without accessing provider credentials.
+- Avoid hardcoding assumptions about model providers.
+- Handle unavailable provider metadata.
+- Handle provider-specific token reporting differences.
+
+## 5.4 Codex CLI Token Tracking
+
+Track:
+
+- Input tokens
+- Output tokens
+- Total tokens
+- Provider
+- Model
+- Session
+- Timestamp
+
+The tracker must account for cases where Codex exposes cumulative token totals, incremental usage events, or both.
+
+Cumulative totals must not be counted as independent requests.
+
+## 5.5 Codex CLI Historical Usage
+
+The tracker must:
+
+- Import available historical sessions.
+- Identify token usage records.
+- Preserve model and provider attribution.
+- Prevent duplicate imports.
+- Preserve collected data after original history is deleted.
+- Handle incomplete records.
+
+## 5.6 Codex CLI Continuous Tracking
+
+The tracker must:
+
+- Detect newly recorded usage.
+- Track active and resumed sessions.
+- Support model changes.
+- Support provider changes.
+- Handle interrupted requests.
+- Handle cumulative usage updates.
+- Resume tracking after restarts.
+- Prevent duplicate counting.
+
+---
+
+# 6. Unified Provider and Model Tracking
+
+## 6.1 Platform, Provider, and Model Identification
+
+Every usage record must distinguish:
+
+**Platform:** The AI coding assistant where the usage occurred.
+
+**Provider:** The service or gateway through which the model was accessed.
+
+**Model:** The actual AI model used.
+
+Example:
+
+| Platform | Provider | Model |
+|---|---|---|
+| Claude Code | Anthropic | Claude Sonnet |
+| Claude Code | OpenRouter | DeepSeek |
+| Claude Code | Z.AI | GLM |
+| Claude Code | Moonshot | Kimi |
+| Codex CLI | OpenAI | GPT |
+| Codex CLI | OpenRouter | DeepSeek |
+| Codex CLI | Z.AI | GLM |
+| Codex CLI | Moonshot | Kimi |
+
+These are illustrative target scenarios, subject to actual compatibility and reliable usage reporting.
+
+## 6.2 Provider Independence
+
+The tracker must not depend on:
+
+- A specific model provider
+- A specific API key
+- Model pricing
+- Subscription billing
+- A particular API endpoint
+- Whether a model is free or paid
+
+The tracker must collect available usage information from the coding assistant's local records or supported interfaces.
+
+## 6.3 Same Model Across Multiple Platforms
+
+A model may be used through multiple coding assistants.
+
+Example:
+
+| Platform | Provider | Model | Tokens |
+|---|---|---|---:|
+| OpenCode | OpenRouter | DeepSeek | 500,000 |
+| Cline CLI | OpenRouter | DeepSeek | 300,000 |
+| Claude Code | OpenRouter | DeepSeek | 200,000 |
+| Codex CLI | OpenRouter | DeepSeek | 400,000 |
+
+The tracker must support:
+
+- Individual platform usage
+- Individual provider usage
+- Individual model usage
+- Combined usage across platforms
+
+The same usage event must never be counted twice.
+
+---
+
+# 7. Time-Based Token Analytics
+
+The application must provide:
+
+- Today's usage
+- Yesterday's usage
 - Last 7 days
 - Current month
 - Previous month
@@ -99,192 +349,54 @@ Track token consumption across:
 - All-time usage
 - Custom date ranges
 
-Users must be able to view combined usage across supported platforms or filter by an individual platform.
+Users must be able to view these statistics across all supported platforms or filter by platform, provider, and model.
 
-### 3.3 Model-Wise Token Usage
-
-Track token consumption separately for every model used within each platform.
-
-Example:
-
-| Platform | Model | Total Tokens |
-|---|---|---:|
-| OpenCode | Claude Sonnet | 900,000 |
-| OpenCode | GPT | 600,000 |
-| Cline CLI | Claude Sonnet | 450,000 |
-| Cline CLI | Gemini | 300,000 |
-
-The same model used in two different platforms must be tracked independently.
+Calendar-based calculations must use the user's selected timezone.
 
 ---
 
-# 4. Cline CLI Integration Requirements
+# 8. Unified Dashboard Requirements
 
-## 4.1 Automatic Cline CLI Detection
-
-The application must automatically detect an existing Cline CLI installation and locate its available session history.
-
-Requirements:
-
-- Support Windows, Linux, and macOS.
-- Detect the active Cline CLI data directory.
-- Support default and custom data locations.
-- Support compatible Cline CLI versions.
-- Identify available session records.
-- Work without modifying Cline CLI configuration.
-- Work without requiring API keys.
-
-If Cline CLI is not installed or no session data is available, the application must clearly communicate this.
-
-## 4.2 Automatic Token Collection
-
-The application must collect available token usage information from Cline CLI's local records or supported interfaces.
-
-For each recorded model request, collect:
-
-- Platform identifier
-- Model identifier
-- Provider identifier
-- Input token count
-- Output token count
-- Timestamp
-- Session identifier
-- Unique usage identifier, where available
-
-The application must distinguish actual usage events from repeated or cumulative records.
-
-Token collection must not depend on the model's price.
-
-## 4.3 Provider-Independent Tracking
-
-Cline CLI supports multiple model providers.
-
-The tracker should support token collection for models accessed through:
-
-- Cline's own provider
-- OpenAI
-- Anthropic
-- Google
-- OpenRouter
-- OpenAI-compatible providers
-- Ollama and other supported local-model providers
-- Additional Cline-compatible providers
-
-Users must not be required to provide their provider API keys to the token tracker.
-
-The tracker must use available usage metadata rather than assuming that every provider reports tokens identically.
-
-## 4.4 Free and Paid Model Support
-
-The tracker must support:
-
-- Free hosted models
-- Paid API models
-- Subscription-based models
-- Local models
-- Third-party provider models
-
-Free models must be tracked in the same way as paid models whenever reliable usage metadata is available.
-
-The application must not exclude a model simply because its usage has no associated API cost.
-
-If token metadata is unavailable, the application must indicate missing information rather than report an incorrect zero.
-
-## 4.5 Historical Token Usage
-
-The application must import available Cline CLI historical usage.
-
-Expected behavior:
-
-- Discover existing sessions.
-- Collect available historical token records.
-- Preserve their original timestamps.
-- Associate tokens with the correct model and provider.
-- Avoid duplicate historical records.
-- Preserve imported data independently of Cline CLI.
-
-Historical usage before tracker installation is limited to records still available locally.
-
-## 4.6 Continuous Usage Tracking
-
-The application must automatically detect new Cline CLI usage as it becomes available.
-
-Expected behavior:
-
-- Track newly created sessions.
-- Track usage added to existing sessions.
-- Recognize model changes.
-- Recognize provider changes.
-- Resume collection after application restarts.
-- Avoid duplicate counting.
-- Keep dashboard statistics updated.
-
-The tracker must not interfere with active Cline CLI sessions.
-
-## 4.7 Multiple Sessions and Model Switching
-
-The application must support:
-
-- Multiple Cline CLI sessions
-- Resumed sessions
-- Multiple models within a session
-- Multiple providers within a session
-- Interrupted sessions
-- Retried model requests
-- Concurrent sessions, where supported
-
-Each usage record must be attributed to the correct model and platform.
-
-## 4.8 Token Accuracy
-
-The application must prioritize accuracy over completeness.
-
-Requirements:
-
-- Prefer reported token counts.
-- Avoid duplicate usage.
-- Handle incomplete usage records.
-- Avoid double counting overlapping token categories.
-- Distinguish unavailable counts from zero.
-- Distinguish reported counts from estimated counts.
-- Handle partial and interrupted responses.
-- Avoid treating cumulative counters as individual requests.
-
-For the initial release, the main token categories are:
-
-- Input tokens
-- Output tokens
-- Combined total tokens
-
-The system must use a consistent token accounting definition across OpenCode and Cline CLI.
-
----
-
-# 5. Unified Dashboard Requirements
-
-The existing dashboard must support both OpenCode and Cline CLI.
-
-## 5.1 Overview
+## 8.1 Overview
 
 Display:
 
-| Metric | Description |
-|---|---|
-| Today's Tokens | Combined tokens consumed today |
-| Monthly Tokens | Combined tokens consumed this month |
-| Yearly Tokens | Combined tokens consumed this year |
-| All-Time Tokens | Combined historical token usage |
+- Total tokens today
+- Total tokens this month
+- Total tokens this year
+- All-time token consumption
 
-## 5.2 Platform Breakdown
-
-Users must be able to view token consumption separately for:
+These metrics must include usage from:
 
 - OpenCode
 - Cline CLI
+- Claude Code
+- Codex CLI
 
-The dashboard must also show combined usage across both platforms.
+Only actual collected usage should contribute to totals.
 
-## 5.3 Model Breakdown
+## 8.2 Platform Breakdown
+
+Display token usage separately for each platform.
+
+Users must be able to compare token consumption across coding assistants.
+
+## 8.3 Provider Breakdown
+
+Display token usage grouped by provider.
+
+Examples:
+
+- Anthropic
+- OpenAI
+- OpenRouter
+- DeepSeek
+- Z.AI
+- Moonshot
+
+Unknown providers must be represented accurately rather than guessed.
+
+## 8.4 Model Breakdown
 
 Display:
 
@@ -294,172 +406,227 @@ Display:
 - Input tokens
 - Output tokens
 - Total tokens
-- Recorded request count
+- Recorded request count, where available
 
-The dashboard must distinguish identical model names used through different providers.
+## 8.5 Visualizations
 
-## 5.4 Visualizations
+Required charts:
 
-The dashboard should provide:
+- Daily token usage
+- Monthly token usage
+- Yearly token usage
+- Platform comparison
+- Provider comparison
+- Model comparison
+- Input/output breakdown
 
-- Daily token usage chart
-- Monthly token usage chart
-- Yearly token usage chart
-- Platform usage comparison
-- Model usage comparison
-- Input versus output token breakdown
+## 8.6 Filters
 
-## 5.5 Filters
-
-Users must be able to filter statistics by:
+Support:
 
 - Platform
 - Provider
 - Model
 - Date range
 
-Filters should work consistently across all supported platforms.
+Filters must work across all four platforms.
 
-## 5.6 Integration Status
+## 8.7 Integration Status
 
-The dashboard must show:
+Display:
 
-- OpenCode integration status
-- Cline CLI integration status
-- Last successful data collection
-- Whether historical records are available
-- Whether usage data is incomplete
-- Any collection errors
+- Platform detected or not detected
+- Tracking active or inactive
+- Last successful synchronization
+- Available historical data
+- Collection errors
+- Incomplete token reporting
 
 ---
 
-# 6. Data Persistence Requirements
+# 9. Historical Data and Persistence
 
-The application must maintain its own local usage history.
+The tracker must maintain its own persistent local usage history.
 
 Requirements:
 
-- Preserve imported token records.
-- Avoid duplicate counting.
-- Support historical usage queries.
-- Preserve data after source sessions are deleted.
-- Support continued collection after application restarts.
-- Keep usage from different platforms distinguishable.
-- Maintain consistent model and provider identifiers.
-- Support future platform integrations without losing existing records.
+- Preserve collected records.
+- Avoid duplicate imports.
+- Support incremental synchronization.
+- Preserve records after source history deletion.
+- Support multiple coding assistants.
+- Support multiple providers and models.
+- Maintain consistent timestamp handling.
+- Keep platform-specific identifiers distinct.
+- Preserve existing OpenCode and Cline CLI data.
 
-The application must not modify the original OpenCode or Cline CLI session data.
+The tracker must not modify source session data.
 
 ---
 
-# 7. Privacy and Security Requirements
+# 10. Accuracy and Reliability Requirements
+
+Accuracy is a core requirement.
+
+The tracker must:
+
+- Prefer reported usage over estimates.
+- Avoid double counting.
+- Distinguish cumulative and incremental token counts.
+- Handle interrupted sessions.
+- Handle retries.
+- Handle model switching.
+- Handle provider switching.
+- Handle missing usage metadata.
+- Avoid double counting cached or reasoning tokens.
+- Distinguish unknown values from zero.
+- Preserve model attribution whenever reliable.
+- Report incomplete usage coverage.
+
+If the platform does not expose enough information to determine exact token usage, the application must clearly communicate that limitation.
+
+The tracker must not fabricate token counts.
+
+---
+
+# 11. Reusability Requirements
+
+The Claude Code and Codex CLI integrations must extend the existing application.
+
+The following existing capabilities must be reused wherever compatible:
+
+- Application infrastructure
+- Collector interfaces
+- Token normalization
+- Deduplication
+- Historical synchronization
+- Local database
+- Aggregation logic
+- Backend API
+- Dashboard
+- Filtering and visualization
+- Error handling
+
+Only platform-specific functionality should be added when required.
+
+The application must not create separate token tracking systems for Claude Code and Codex CLI.
+
+Existing OpenCode and Cline CLI functionality must remain intact.
+
+---
+
+# 12. Privacy and Security
 
 The application must:
 
 - Operate locally by default.
-- Never require users to provide model-provider API keys.
-- Never collect or store provider credentials.
-- Avoid collecting prompts and model responses.
+- Require no provider API keys.
+- Avoid reading or storing credentials.
+- Avoid collecting prompt contents.
 - Avoid collecting source code.
-- Access only information necessary for token usage tracking.
-- Avoid modifying coding assistant configuration.
-- Avoid intercepting model API traffic.
-- Avoid disrupting normal coding assistant operations.
+- Avoid collecting model response contents.
+- Use read-only access to coding assistant data.
+- Avoid modifying existing configurations.
+- Avoid intercepting API requests.
+- Avoid routing model traffic through a proxy.
+- Minimize stored information.
 
-The tracker must remain independent of the user's existing provider authentication.
+Users must remain in control of their locally collected analytics.
 
 ---
 
-# 8. Out of Scope
+# 13. Out of Scope
 
-The following features are excluded from the current Cline CLI integration:
+The following are excluded from the current release:
 
-- Cache hit and cache miss analytics
-- Cache read and cache write token breakdowns
-- API cost calculations
-- Provider billing information
+- Cache hit/miss analytics
+- Cache read/write breakdown dashboards
+- Cost estimation
 - Subscription quota tracking
-- Rate-limit monitoring
+- Provider rate-limit tracking
 - Cloud synchronization
-- Team analytics
-- Prompt analysis
+- Team usage analytics
+- Prompt content analysis
 - Source code analysis
-- Additional coding assistant integrations
+- Antigravity integration
+- FreeBuff integration
 
-These features may be added in future releases.
-
----
-
-# 9. Cline CLI Success Criteria
-
-All of the following were verified against the live stores on 2026-10-12 rather
-than assumed from the phase list. Measured that day: 202,024,393 tokens across
-both platforms, of which Cline 189,250,734.
-
-The Cline CLI integration is complete when:
-
-- [x] Cline CLI is automatically detected. → `collectors/cline/locator.py`, verified live against `~/.cline/data`
-- [x] Available historical usage is imported. → 2,142 records on first run
-- [x] New usage is collected automatically. → `sync/scheduler.py`; a pass at startup, then every `sync_interval_seconds`
-- [x] Input tokens are tracked. → `test_token_fields_follow_the_phase_1_field_map`
-- [x] Output tokens are tracked. → same
-- [x] Total tokens are calculated accurately. → computed as input + output, never read from the source
-- [x] Daily usage statistics are available. → `/api/usage/daily`
-- [x] Monthly usage statistics are available. → `/api/usage/monthly`
-- [x] Yearly usage statistics are available. → `/api/usage/yearly`
-- [x] Model-wise usage statistics are available. → `/api/usage/models`, grouped by platform, provider, and model
-- [x] Provider-wise identification works. → two providers serving one model name stay separate
-- [x] Free and paid models are supported wherever usage metadata exists. → `test_a_free_model_is_stored_exactly_like_a_paid_one`; no price is consulted
-- [x] Multiple sessions are handled correctly. → 42 sessions, each attributed to its own id
-- [x] Model switching is handled correctly. → per-message; `test_model_switching_attributes_each_record_to_its_own_model`
-- [x] Duplicate usage is prevented. → upsert on `(platform, source_event_id)`; repeat scans update in place
-- [x] Historical data is preserved. → deleting a source session leaves stored rows intact
-- [x] No API keys are required. → `providers.json` is never opened; nothing references a credential
-- [x] Cline CLI configuration remains unchanged. → 85 session files byte-identical after a full sync
-- [x] Existing OpenCode tracking continues working. → checkpoint, schema and tests untouched; 12,773,659 tokens still collected
-- [x] Combined OpenCode and Cline CLI statistics are accurate. → combined equals the sum of the two, to the token
-- [x] Missing or incomplete usage is clearly indicated. → 28 unreported Cline calls shown as `is_complete: false`, never as zero
+Cache and reasoning token metadata may be used internally when necessary to avoid incorrect totals, but dedicated analytics for those categories are deferred.
 
 ---
 
-# 10. Project Completion Status
+# 14. Success Criteria
 
-## OpenCode
+## Claude Code
 
-**Status: DONE**
+- [ ] Claude Code is automatically detected.
+- [ ] Available historical usage is imported.
+- [ ] New usage is collected automatically.
+- [ ] Native Claude models are tracked.
+- [ ] Compatible third-party providers are supported.
+- [ ] Input and output tokens are tracked.
+- [ ] Daily, monthly, and yearly statistics work.
+- [ ] Model-wise statistics work.
+- [ ] Provider-wise statistics work.
+- [ ] Model switching is handled.
+- [ ] Duplicate counting is prevented.
+- [ ] No API keys or configuration changes are required.
 
-Marked completed for this project.
+## Codex CLI
 
-## Cline CLI
+- [ ] Codex CLI is automatically detected.
+- [ ] Available historical usage is imported.
+- [ ] New usage is collected automatically.
+- [ ] Native OpenAI models are tracked.
+- [ ] Compatible third-party providers are supported.
+- [ ] Input and output tokens are tracked.
+- [ ] Daily, monthly, and yearly statistics work.
+- [ ] Model-wise statistics work.
+- [ ] Provider-wise statistics work.
+- [ ] Cumulative token reporting is handled correctly.
+- [ ] Duplicate counting is prevented.
+- [ ] No API keys or configuration changes are required.
 
-**Status: DONE**
+## Unified Platform
 
-Integrated into the existing tracker. All §9 criteria verified against the live
-stores; see `implementation.md` for the phase-by-phase record.
-
-## Other Platforms
-
-**Status: PLANNED**
-
-Not included in the current development scope. Adding one requires only the
-collector contract (`parallelism.md` §11).
+- [ ] OpenCode remains functional.
+- [ ] Cline CLI remains functional.
+- [ ] Claude Code integrates with the existing application.
+- [ ] Codex CLI integrates with the existing application.
+- [ ] All four platforms use the same analytics system.
+- [ ] Combined platform usage is accurate.
+- [ ] Provider and model filters work.
+- [ ] Existing historical data is preserved.
+- [ ] No duplicate infrastructure is introduced.
+- [ ] Existing functionality passes regression testing.
 
 ---
 
-# 11. Final Project Goal
+# 15. Final Project Status
 
-Create a unified, privacy-first AI coding token usage tracking platform that automatically monitors token consumption across multiple coding assistants.
+| Integration | Status |
+|---|---|
+| OpenCode | ✅ DONE |
+| Cline CLI | ✅ DONE |
+| Claude Code | 🔄 NEXT |
+| Codex CLI | 🔄 NEXT |
+| Antigravity | ⏳ FUTURE |
+| FreeBuff | ⏳ FUTURE |
 
-The current release must support:
+---
 
-1. OpenCode — completed integration.
-2. Cline CLI — current integration.
+# 16. Final Project Goal
 
-Users should be able to understand:
+Extend the existing universal AI token usage tracker to support Claude Code and Codex CLI alongside the completed OpenCode and Cline CLI integrations.
 
-- How many tokens they consume overall.
-- How many tokens they consume daily, monthly, and yearly.
-- How many tokens each AI coding platform consumes.
-- How many tokens each model consumes within each platform.
+The platform must support native models and compatible third-party providers such as OpenRouter, DeepSeek, GLM, and Kimi wherever reliable token usage data is available.
 
-**The immediate goal is to complete Cline CLI integration without disrupting the existing OpenCode integration.**
+Users must be able to monitor:
+
+1. Total token consumption across all supported coding assistants.
+2. Daily, monthly, yearly, and all-time token usage.
+3. Platform-wise token usage.
+4. Provider-wise token usage.
+5. Model-wise token usage.
+
+**The final result must be one unified, reusable, local-first token analytics platform—not four separate tracking applications.**
