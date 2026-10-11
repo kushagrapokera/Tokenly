@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     opencode_command: str = "opencode"
     opencode_command_timeout_seconds: float = 15.0
 
+    cline_data_dir: Path | None = None
+
     # How far back an incremental scan re-reads, in milliseconds. Re-reading a window
     # costs a few redundant upserts and recovers usage that landed after the last scan.
     rescan_overlap_ms: int = 300_000

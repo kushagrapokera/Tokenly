@@ -36,13 +36,14 @@ class CategoryRelationships:
     cache_overlap: CacheOverlap = "additive"
     reasoning_overlap: ReasoningOverlap = "additive"
 
-    @property
-    def counts_secondary_categories_separately(self) -> bool:
-        """Report whether reasoning and cache sit outside the per-call total."""
-        return self.cache_overlap == "additive" and self.reasoning_overlap == "additive"
-
 
 OPENCODE_RELATIONSHIPS = CategoryRelationships(
+    cache_overlap="additive",
+    reasoning_overlap="additive",
+)
+
+
+CLINE_RELATIONSHIPS = CategoryRelationships(
     cache_overlap="additive",
     reasoning_overlap="additive",
 )
