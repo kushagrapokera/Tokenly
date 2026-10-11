@@ -21,7 +21,7 @@ def test_health_reports_ok_when_database_answers(client: TestClient) -> None:
 def test_health_reports_the_configured_version(client: TestClient) -> None:
     response = client.get("/api/health")
 
-    assert response.json()["version"] == "0.1.0"
+    assert response.json()["version"] == "1.0.0"
 
 
 def test_health_returns_service_unavailable_when_database_is_unreachable(

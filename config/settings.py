@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "Tokenly"
-    app_version: str = "0.1.0"
+    app_version: str = "1.0.0"
     host: str = "127.0.0.1"
     port: int = 8000
     log_level: str = "INFO"
