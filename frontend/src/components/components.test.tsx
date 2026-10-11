@@ -4,11 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { MetricsCards } from './MetricsCards'
 import { ModelBreakdownTable } from './ModelBreakdownTable'
+import { UsageCharts } from './UsageCharts'
 import { TrackingStatusPanel } from './TrackingStatusPanel'
 import { FilterBar } from './filters'
 import { DEFAULT_FILTERS } from './filterState'
 import type { DashboardFilters } from './filterState'
-import { makeCollectorStatus, makeModels, makeSummary, stubFetch } from '../test/fixtures'
+import { makeCollectorStatus, makeModels, makeSummary, makeTimeline, stubFetch } from '../test/fixtures'
 
 const originalFetch = globalThis.fetch
 
@@ -118,6 +119,24 @@ describe('MetricsCards', () => {
     expect(await screen.findAllByText('database unavailable')).toHaveLength(4)
   })
 })
+
+it('names the window each chart actually covers', async () => {
+    // The range filter defaults to the last seven days, so a chart that does not
+    // say so reads as the whole history. The breakdown already states its window.
+    mockFetch({
+      '/api/usage/daily': makeTimeline([{ label: '2026-10-11', total: 100 }]),
+      '/api/usage/monthly': makeTimeline([{ label: '2026-10', total: 100 }]),
+      '/api/usage/yearly': makeTimeline([{ label: '2026', total: 100 }]),
+      '/api/usage/timeline': makeTimeline([{ label: '2026-10-11', total: 100 }]),
+    })
+
+    render(<UsageCharts filters={DEFAULT_FILTERS} timezone="UTC" />)
+
+    expect(
+      await screen.findByText('Tokens per calendar day · last 7 days'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Tokens per calendar month · last 7 days')).toBeInTheDocument()
+  })
 
 describe('ModelBreakdownTable', () => {
   const filters: DashboardFilters = DEFAULT_FILTERS
