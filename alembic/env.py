@@ -14,10 +14,19 @@ from database.connection import Base
 
 config = context.config
 
-if config.config_file_name is not None:
+# Alembic's logging setup replaces the root logger's handlers. A caller that has
+# already configured logging — the running application, or a test asserting on
+# captured log records — passes `configure_logger=False` to keep its own.
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+# An explicitly supplied URL wins. The application migrates the database it was
+# configured with, which is not necessarily the one `get_settings()` resolves, and
+# honouring the override is what keeps that safe. Run from the command line with
+# no URL given, this still falls back to the configured database.
+config.set_main_option(
+    "sqlalchemy.url", config.get_main_option("sqlalchemy.url") or get_settings().database_url
+)
 
 target_metadata = Base.metadata
 

@@ -165,6 +165,25 @@ Preserve raw usage information where needed to support future compatibility.
 
 ## 7. Phase 4 — Extend Existing Database
 
+**Status: done, with no schema change.** One `usage_events` table already holds
+both platforms: `platform` plus the unique `(platform, source_event_id)`
+constraint is what keeps Cline's `{session}:{message}` id from colliding with
+OpenCode's bare `message.id`, and `usage_status` plus nullable counts is how
+completeness is recorded. No column was missing, so no migration was written.
+
+The audit turned up two defects that were fixed here:
+
+- Nothing created the schema, so a fresh install answered `/api/health` with
+  200 and then failed every usage query with `no such table: usage_events`.
+  `database/schema.py` now prepares the schema at startup, creating only tables
+  that are missing and never touching stored rows.
+- `alembic/env.py` overwrote an explicitly supplied database URL with the one
+  from settings, so migrations could only ever target the configured default.
+
+`tests/test_schema_migrations.py` builds a database both ways — by running the
+migrations and from the ORM metadata — and fails if the two ever disagree, which
+is what would silently break existing installations after a model change.
+
 Use the existing database and usage tables.
 
 Check whether the current schema already supports:

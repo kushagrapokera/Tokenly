@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from collectors.registry import build_collectors
 from config.settings import Settings, get_settings
 from database.connection import create_database_engine, create_session_factory
+from database.schema import ensure_schema
 from errors.handlers import register_error_handlers
 from logging_setup.configure import configure_logging
 from routes.collector import router as collector_router
@@ -37,6 +38,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         resolved_settings.database_url,
         database_path=resolved_settings.database_path,
     )
+    ensure_schema(engine)
     app = FastAPI(
         title=resolved_settings.app_name,
         version=resolved_settings.app_version,
