@@ -38,3 +38,32 @@ class UnsupportedStorageFormatError(CollectorError):
         super().__init__(f"unsupported storage format at {source_path}: {detail}")
         self.source_path = source_path
         self.detail = detail
+
+
+class AggregationError(TokenlyError):
+    """Raised when usage aggregation cannot be computed."""
+
+
+class InvalidTimezoneError(AggregationError):
+    """Raised when a user-selected timezone name is not recognised."""
+
+    def __init__(self, timezone_name: str) -> None:
+        super().__init__(f"unknown timezone {timezone_name!r}")
+        self.timezone_name = timezone_name
+
+
+class InvalidTimeRangeError(AggregationError):
+    """Raised when a custom date range is empty, inverted, or missing its bounds."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(f"invalid time range: {detail}")
+
+
+class InvalidGranularityError(AggregationError):
+    """Raised when a timeline granularity is not day, month, or year."""
+
+    def __init__(self, granularity: str) -> None:
+        super().__init__(
+            f"unsupported timeline granularity {granularity!r}; use 'day', 'month', or 'year'"
+        )
+        self.granularity = granularity
