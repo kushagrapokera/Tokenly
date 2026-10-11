@@ -21,7 +21,7 @@ from pathlib import Path
 from collectors.base import BaseCollector, ScanOutcome
 from collectors.checkpoint import Checkpoint
 from collectors.opencode.extractor import PLATFORM, extract_usage_record
-from collectors.opencode.locator import require_database_path, resolve_database_path
+from collectors.opencode.locator import DataDirectoryResolver
 from collectors.opencode.reader import (
     MessageRow,
     count_assistant_messages,
@@ -51,14 +51,21 @@ class OpenCodeCollector(BaseCollector):
     ) -> None:
         self._settings = settings or get_settings()
         self._extract = record_extractor
+        # Long-lived, so the data directory is resolved once rather than re-asked
+        # from the CLI on every scan (~600 ms each time).
+        self._resolver = DataDirectoryResolver(self._settings)
 
     @property
     def platform(self) -> str:
         return PLATFORM
 
+    def refresh(self) -> None:
+        """Discard cached source discovery so the next scan asks OpenCode again."""
+        self._resolver.invalidate()
+
     def discover(self) -> DiscoveryResult:
         """Report whether OpenCode data is readable here; never raise for 'not installed'."""
-        database_path = resolve_database_path(self._settings)
+        database_path = self._resolver.database_path()
 
         if not database_path.is_file():
             logger.info("no opencode database at %s", database_path)
@@ -124,7 +131,7 @@ class OpenCodeCollector(BaseCollector):
 
         records: list[UsageRecord] = []
         pending: list[int] = []
-        database_path = require_database_path(self._settings)
+        database_path = self._resolver.require_database_path()
         with self._snapshot_connection(database_path) as connection:
             for row in iter_assistant_messages(connection):
                 if resume_from is not None and resume_from.covers(row.time_created_ms):
@@ -151,7 +158,7 @@ class OpenCodeCollector(BaseCollector):
 
     def _iter_records(self, checkpoint: Checkpoint | None) -> Iterator[UsageRecord]:
         """Yield usage records from a fresh snapshot, optionally resuming from a checkpoint."""
-        database_path = require_database_path(self._settings)
+        database_path = self._resolver.require_database_path()
         with self._snapshot_connection(database_path) as connection:
             for row in iter_assistant_messages(connection):
                 if checkpoint is not None and checkpoint.covers(row.time_created_ms):

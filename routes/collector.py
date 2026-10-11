@@ -93,8 +93,14 @@ def trigger_platform_rescan(
 
 
 def _run_rescan(session: Session, collector: BaseCollector, settings: Settings) -> SyncResult:
-    """Run one collector's full rescan and log its outcome."""
+    """Run one collector's full rescan and log its outcome.
+
+    The collector is refreshed first: a rescan is what a user reaches for when the
+    numbers look wrong, so it must not be answered from a cached view of where the
+    source lives.
+    """
     logger.info("rescan requested for %s", collector.platform)
+    collector.refresh()
     return build_sync_service(collector, settings).run(session, from_scratch=True)
 
 

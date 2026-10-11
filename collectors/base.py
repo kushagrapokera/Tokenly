@@ -53,3 +53,13 @@ class BaseCollector(ABC):
         unfinished messages; collectors that can detect them override this.
         """
         return ScanOutcome(records=self.collect_updates(checkpoint))
+
+    def refresh(self) -> None:
+        """Discard anything cached about where this platform stores its data.
+
+        Called before a manual rescan. A collector that caches source discovery
+        overrides this, so the user who presses rescan because the numbers look
+        wrong gets a genuine second look rather than the same cached answer.
+        Collectors with nothing cached need do nothing.
+        """
+        return None

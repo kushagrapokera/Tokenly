@@ -1,6 +1,7 @@
 # Parallelism.md — making collection fast, and keeping it fast as platforms are added
 
-**Status:** plan. Nothing in this document is implemented yet.
+**Status:** A0 is implemented and measured (see §1 and §13). A1–A3 and all of
+phase B are still plan.
 
 **Scope:** how collection and storage of usage records gets faster today, and how
 the same design keeps working when Claude, Codex, Antigravity and others are
@@ -17,23 +18,26 @@ assumptions are written down explicitly in §10 rather than left implicit.
 
 Median of 5 runs, warm page cache, 4,700 stored records (2,603 OpenCode + 2,142 Cline).
 
-| Stage | Time | Note |
-|---|---:|---|
-| **OpenCode `collect_history()`** | **836 ms** | |
-| ↳ `opencode debug paths` subprocess | ~597 ms | **71% of it** — runs on *every* scan |
-| ↳ snapshot copy of the live database | ~172 ms | a full copy, every scan |
-| ↳ indexed SQL query | 11 ms | `message_session_time_created_id_idx` already exists |
-| ↳ row decode + model construction | ~40 ms | *variable* — the only part batching could touch |
-| ↳ `json.loads` | ~11 ms | 29 sessions, median 0.1 ms each |
-| **Cline `collect_history()`** | **144 ms** | |
-| ↳ read + `json.loads` of 42 session files | ~100 ms | *variable* — 42 independent files |
-| ↳ normalize in Python | ~33 ms | |
-| **Sequential total** | **948 ms** | |
-| Write: first import, 2,142 rows | 174 ms | one transaction |
-| Write: re-import 2,142 existing rows | **1,125 ms** | one `UPDATE` per row |
-| Dashboard `summary` / `breakdown` / `timeline` | 1.3 / 2.4 / 43 ms | |
+A0 has since removed the subprocess from the scan path. The "before" column is
+what the plan was written against; "now" is measured after A0.
 
-**Fixed versus variable — the distinction the whole plan turns on:**
+| Stage | Before | Now | Note |
+|---|---:|---:|---|
+| **OpenCode `collect_history()`** | **836 ms** | **276 ms** | |
+| ↳ `opencode debug paths` subprocess | ~597 ms | **0 ms** | paid once per collector, not per scan |
+| ↳ snapshot copy of the live database | ~172 ms | ~172 ms | still every scan — this is A2 |
+| ↳ indexed SQL query | 11 ms | 11 ms | `message_session_time_created_id_idx` already exists |
+| ↳ row decode + model construction | ~40 ms | ~40 ms | *variable* — the only part batching could touch |
+| ↳ `json.loads` | ~11 ms | ~11 ms | 29 sessions, median 0.1 ms each |
+| **Cline `collect_history()`** | **144 ms** | **144 ms** | untouched by A0 |
+| ↳ read + `json.loads` of 42 session files | ~100 ms | ~100 ms | *variable* — 42 independent files |
+| ↳ normalize in Python | ~33 ms | ~33 ms | |
+| **Sequential total** | **948 ms** | **~420 ms** | |
+| Write: first import, 2,142 rows | 174 ms | 174 ms | one transaction |
+| Write: re-import, 2,142 existing rows | **1,125 ms** | **1,125 ms** | one `UPDATE` per row — this is A1 |
+| Dashboard `summary` / `breakdown` / `timeline` | 1.3 / 2.4 / 43 ms | 1.3 / 2.4 / 43 ms | |
+
+**Fixed versus variable — the distinction the whole plan turns on** (before A0):
 
 | Platform | Fixed per scan | Variable per scan | What that means |
 |---|---:|---:|---|
@@ -424,7 +428,7 @@ any of them.
 
 | # | Change | Expected | Risk |
 |---|---|---|---|
-| **A0** | Cache the resolved OpenCode data directory instead of re-running `opencode debug paths` per scan | **−590 ms per scan and per status view** | See the rules below |
+| **A0** | ~~Cache the resolved OpenCode data directory instead of re-running `opencode debug paths` per scan~~ | **done — 836 → 276 ms** | See the rules below |
 | A1 | Replace the per-row `UPDATE` loop with one bulk `INSERT … ON CONFLICT DO UPDATE` | 1,125 → ~60 ms | Needs SQLite ≥ 3.24 (2018). Must preserve `UpsertResult` counts. |
 | A2 | Skip the snapshot when the live DB is unchanged (`mtime`, `size`) | −172 ms per no-change scan | A stale snapshot must never skip new messages; the timestamp checkpoint makes this safe, and needs a test proving it. |
 | A3 | Timeline: select columns instead of ORM entities | 43 → ~8 ms | Low |
@@ -435,8 +439,10 @@ cannot reach it at all.
 
 #### A0 — the rules, and why each one
 
-A0 is the largest single win in the whole plan and the smallest change. Four
-rules make it safe:
+**Implemented.** `DataDirectoryResolver` in `collectors/opencode/locator.py`,
+held by the collector instance. Measured: an OpenCode scan went from 900 ms to
+276 ms, and `/api/collector/status` from 759 ms to 194 ms. Four rules make it
+safe, and each is mutation-checked — disabling any one of them fails the suite:
 
 1. **Cache successes only.** A failed probe is never cached, so installing
    OpenCode later is noticed on the next scan. Measured cost of a failed probe:

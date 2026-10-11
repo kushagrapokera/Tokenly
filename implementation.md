@@ -388,19 +388,22 @@ what makes them deterministic.
 
 ## 12. Phase 9 — Collection Performance
 
-**Status: planned.** The design, the measurements behind it, and the rollout
-order are in [`parallelism.md`](parallelism.md). Nothing in that document is
-implemented yet.
+**Status: A0 done.** The design, the measurements behind it, and the rollout
+order are in [`parallelism.md`](parallelism.md).
 
 Scope in one line: make a collection pass cheap enough that the sync interval can
 drop from five minutes to about one, without changing what is stored.
 
-- The largest single item is `opencode debug paths` — a ~590 ms subprocess run on
-  every scan *and* every status view — cached once instead.
-- Then a bulk upsert replacing a per-row `UPDATE` loop (1,125 ms), and a skipped
-  snapshot when the source database has not changed (172 ms).
-- Parallel collection across batches comes last, and only if the measurements
-  still justify it after the above.
+- **A0 — done.** OpenCode was running `opencode debug paths` on every scan and
+  every status view, spending ~590 ms asking where a directory is. The answer is
+  now resolved once per collector and reused. Measured: an OpenCode scan went
+  from **900 ms to 276 ms**, and the collector status endpoint from 759 ms to
+  194 ms.
+- **A1** — replace the per-row `UPDATE` loop with one bulk upsert (1,125 ms).
+- **A2** — skip the snapshot when the source database has not changed (172 ms).
+- **A3** — read the timeline's columns instead of ORM entities (43 → ~8 ms).
+- **Phase B** — parallel collection across Cline's batches, last, and only if the
+  measurements still justify it after the above.
 
 ## 13. Implementation Priority
 

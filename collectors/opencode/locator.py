@@ -3,6 +3,12 @@
 OpenCode's data directory is configurable, so the only reliable way to find it is to
 ask OpenCode itself. We shell out to the CLI and fall back to the documented default
 per platform, logging whenever the fallback is used.
+
+Asking costs about 600 ms — the CLI has to start, load, and print its paths — and the
+answer changes only when the user edits OpenCode's own configuration. Re-asking on
+every scan therefore spent 71% of a scan rediscovering a directory. `DataDirectoryResolver`
+caches the answer for the life of a collector, which is long-lived; the module-level
+functions stay uncached so scripts and tests keep asking for themselves.
 """
 
 import logging
@@ -110,3 +116,75 @@ def require_database_path(settings: Settings) -> Path:
             str(database_path), FileNotFoundError("no OpenCode database at this path")
         )
     return database_path
+
+
+class DataDirectoryResolver:
+    """Resolves OpenCode's data directory once and reuses the answer.
+
+    Four rules make the cache safe rather than merely fast:
+
+    1. **Only a successful answer is cached.** A failed probe is not, so installing
+       OpenCode later is noticed on the very next scan. There is nothing to lose by
+       this: a probe for a missing binary fails in about 0 ms.
+    2. **The cache lives on the collector instance**, so two collectors never share
+       an answer and tests stay isolated from each other.
+    3. **A cached path that no longer holds the database is re-resolved.** That is
+       what covers the user moving their data directory, without needing a TTL and
+       the invalidation rules that come with one.
+    4. **`invalidate()` exists for a manual rescan**, the moment a user reaches for
+       when the numbers look wrong, so the escape hatch costs them nothing.
+
+    Nothing is written to disk. The server is a long-lived local process, so a
+    restart costs one probe either way, and a cache file would outlive the process
+    and go stale invisibly.
+    """
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self._cached_directory: Path | None = None
+
+    def data_directory(self) -> Path:
+        """Return the data directory, asking the CLI at most once."""
+        if self._settings.opencode_data_dir is not None:
+            # Explicitly configured: static by definition, so nothing to cache.
+            return self._settings.opencode_data_dir.expanduser()
+
+        if self._cached_directory is not None:
+            return self._cached_directory
+
+        reported = _read_data_directory_from_cli(self._settings)
+        if reported is None:
+            # Not cached: a later scan should notice OpenCode being installed.
+            logger.debug("opencode CLI did not report a data directory; asking again next scan")
+            return platform_default_data_directory()
+
+        logger.info("opencode reports its data directory at %s", reported)
+        self._cached_directory = reported
+        return reported
+
+    def database_path(self) -> Path:
+        """Return the database path, re-resolving if the cached location went stale."""
+        directory = self.data_directory()
+        if self._cached_directory is directory and not (directory / DATABASE_FILE_NAME).is_file():
+            logger.info(
+                "no opencode database at the cached path %s; asking the cli again",
+                directory,
+            )
+            self.invalidate()
+            directory = self.data_directory()
+        return directory / DATABASE_FILE_NAME
+
+    def require_database_path(self) -> Path:
+        """Return the database path, raising a contextual error when it is missing."""
+        database_path = self.database_path()
+        if not database_path.is_file():
+            raise CollectorSourceUnreadableError(
+                str(database_path), FileNotFoundError("no OpenCode database at this path")
+            )
+        return database_path
+
+    def invalidate(self) -> None:
+        """Forget the cached answer so the next call asks the CLI again."""
+        if self._cached_directory is not None:
+            logger.info("forgetting the cached opencode data directory %s", self._cached_directory)
+        self._cached_directory = None
