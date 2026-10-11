@@ -790,31 +790,37 @@ Validate correctness across different OpenCode usage scenarios.
 
 ### Unit Tests
 
-- [ ] Token normalization.
-- [ ] Total token calculation.
-- [ ] Timestamp conversion.
-- [ ] Model identification.
-- [ ] Provider identification.
-- [ ] Deduplication.
-- [ ] Aggregation.
-- [ ] Missing usage handling.
+Already covered by earlier phases; re-verified rather than rewritten.
+
+- [x] Token normalization. → `test_normalization.py` (27 tests), `test_extractor.py` (22)
+- [x] Total token calculation. → additive and subset categories both pinned
+- [x] Timestamp conversion. → naive assumed UTC, offset converted, JSON before column
+- [x] Model identification. → `test_provider_and_model_identifiers_pass_through_untouched`
+- [x] Provider identification. → same; two providers sharing a model name stay distinct
+- [x] Deduplication. → `test_database.py` (34), `test_sync.py` (35)
+- [x] Aggregation. → `test_aggregation*.py` (30)
+- [x] Missing usage handling. → unavailable rather than zero, per field and per record
 
 ### Integration Tests
 
-- [ ] Single session with one model.
-- [ ] Multiple sessions with one model.
-- [ ] Multiple models in one session.
-- [ ] Multiple providers.
-- [ ] Free hosted model.
-- [ ] Paid API model.
-- [ ] Local model.
-- [ ] Interrupted requests.
-- [ ] Streaming updates.
-- [ ] Retried requests.
-- [ ] Session compaction.
-- [ ] Historical import.
-- [ ] Application restart.
-- [ ] Deleted original session history.
+Each drives the whole path — source database → collector → sync → store → aggregate — and
+asserts on what a dashboard would show. Scenarios are produced by writing, updating, or
+deleting rows in the *source*, never by arranging Tokenly's own database.
+
+- [x] Single session with one model.
+- [x] Multiple sessions with one model.
+- [x] Multiple models in one session.
+- [x] Multiple providers.
+- [x] Free hosted model. → tracked identically to a paid one, not special-cased
+- [x] Paid API model.
+- [x] Local model.
+- [x] Interrupted requests. → `finish: abort` counts as zero, not as missing
+- [x] Streaming updates. → a message with no `time.completed` is held back, then collected
+- [x] Retried requests. → same message id updates in place; never a second row
+- [x] Session compaction. → emptying a session upstream changes no stored total
+- [x] Historical import. → first run reads everything
+- [x] Application restart. → `restart()` rebuilds engine, factory, collector, and service
+- [x] Deleted original session history. → deleting every source row leaves totals intact
 
 ### Validation
 
@@ -822,9 +828,42 @@ Compare collected token usage with OpenCode's own reported statistics wherever p
 
 Document any discrepancies.
 
+### Implementation
+
+| File | Concern |
+|---|---|
+| `tests/scenarios.py` | the harness: a fake OpenCode source plus the real pipeline |
+| `tests/test_scenarios.py` | 21 scenario tests |
+| `scripts/validate_against_opencode.py` | per-model comparison against OpenCode's own database |
+| `docs/data_limitations.md` | eight documented limitations, with the evidence for each |
+
+The validator reports two kinds of difference separately, because they mean different
+things: **incorrect** (a token figure disagrees — a bug) and **not yet synced** (a
+completed upstream message has not been read — staleness, since there is no background
+sync). Messages still generating are excluded, so an active session does not read as a
+discrepancy.
+
+### Discrepancies Found
+
+One, and it is a presentation difference rather than missing data:
+
+**`opencode stats` folds reasoning into "Output Tokens" and never shows a reasoning line.**
+OpenCode stores `reasoning` as its own field and counts it as a separate additive term —
+verified arithmetically: all 1,853 live records that state a total satisfy
+`input + output + reasoning + cache == total`. Tokenly keeps reasoning out of
+`total_tokens` because folding it in would double-count against `consumption_tokens`.
+The two models reporting no reasoning (`union-alpha`, `big-pickle`) match OpenCode
+exactly on output, which is the control confirming the explanation.
+
 ### Completion Criteria
 
 Critical tests pass, and known data limitations are documented.
+→ **Verified**: 309 tests pass (21 new scenario tests); ruff and mypy strict clean.
+Against a live install of 1,403 real records, every model reconciles exactly on input,
+output, reasoning, and cache read — `validate_against_opencode.py` exits 0. Mid-session
+it correctly reported 5 completed-but-unsynced messages as staleness rather than wrong
+numbers; a sync cleared them. Eight known limitations documented with evidence in
+`docs/data_limitations.md`.
 
 ---
 
