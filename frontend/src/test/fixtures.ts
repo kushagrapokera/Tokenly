@@ -58,6 +58,7 @@ export function makeModels(overrides: Partial<ModelBreakdownResponse> = {}): Mod
     filters: { platform: null, provider_id: null, model_id: null },
     models: [
       {
+        platform: 'opencode',
         provider_id: 'openrouter',
         model_id: 'sonnet',
         request_count: 3,
@@ -65,6 +66,7 @@ export function makeModels(overrides: Partial<ModelBreakdownResponse> = {}): Mod
         unknown_total_events: 0,
       },
       {
+        platform: 'opencode',
         provider_id: 'opencode',
         model_id: 'free-model',
         request_count: 1,

@@ -65,6 +65,7 @@ export interface SummaryResponse {
 }
 
 export interface ModelUsage {
+  platform: string
   provider_id: string
   model_id: string
   request_count: number

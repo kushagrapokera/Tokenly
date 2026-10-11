@@ -116,12 +116,14 @@ class SummaryResponse(BaseModel):
 
 
 class ModelUsageResponse(BaseModel):
-    """One (provider, model) pair's totals.
+    """One (platform, provider, model) combination's totals.
 
-    Provider and model are reported separately because two providers can serve the
-    same model name, and attributing one's usage to the other would be wrong.
+    Platform and model are reported separately because two providers — or two
+    assistants — can serve the same model name, and attributing one's usage to
+    the other would be wrong.
     """
 
+    platform: str
     provider_id: str
     model_id: str
     request_count: int
@@ -216,6 +218,7 @@ def _window_info(window: TimeWindow, range_name: str) -> WindowInfo:
 def _model_usage(model: ModelUsage) -> ModelUsageResponse:
     """Convert one breakdown row into its response shape."""
     return ModelUsageResponse(
+        platform=model.platform,
         provider_id=model.provider_id,
         model_id=model.model_id,
         request_count=model.request_count,

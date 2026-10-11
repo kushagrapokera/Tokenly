@@ -114,8 +114,8 @@ describe('ModelBreakdownTable', () => {
     mockFetch({
       '/api/usage/models': makeModels({
         models: [
-          { provider_id: 'alpha', model_id: 'sonnet', request_count: 1, totals: { input_tokens: 10, output_tokens: 1, total_tokens: 11, consumption_tokens: 11 }, unknown_total_events: 0 },
-          { provider_id: 'beta', model_id: 'sonnet', request_count: 2, totals: { input_tokens: 20, output_tokens: 2, total_tokens: 22, consumption_tokens: 22 }, unknown_total_events: 0 },
+          { platform: 'opencode', provider_id: 'alpha', model_id: 'sonnet', request_count: 1, totals: { input_tokens: 10, output_tokens: 1, total_tokens: 11, consumption_tokens: 11 }, unknown_total_events: 0 },
+          { platform: 'opencode', provider_id: 'beta', model_id: 'sonnet', request_count: 2, totals: { input_tokens: 20, output_tokens: 2, total_tokens: 22, consumption_tokens: 22 }, unknown_total_events: 0 },
         ],
       }),
     })
@@ -131,7 +131,7 @@ describe('ModelBreakdownTable', () => {
     mockFetch({
       '/api/usage/models': makeModels({
         models: [
-          { provider_id: 'opencode', model_id: 'partial', request_count: 2, totals: { input_tokens: 0, output_tokens: 0, total_tokens: 0, consumption_tokens: 0 }, unknown_total_events: 2 },
+          { platform: 'opencode', provider_id: 'opencode', model_id: 'partial', request_count: 2, totals: { input_tokens: 0, output_tokens: 0, total_tokens: 0, consumption_tokens: 0 }, unknown_total_events: 2 },
         ],
       }),
     })
