@@ -600,16 +600,33 @@ GROUP BY provider_id, model_id;
 
 ### Important Rules
 
-- Use the user's selected timezone for calendar boundaries.
-- Store timestamps in UTC.
-- Use half-open time intervals.
-- Exclude unavailable totals from numerical sums.
-- Report incomplete coverage separately.
-- Keep providers distinguishable even when model names match.
+- [x] Use the user's selected timezone for calendar boundaries. → every window builder takes `timezone_name`, builds midnight edges in that zone via `zoneinfo`, returns UTC
+- [x] Store timestamps in UTC. → `as_utc` normalizes naive/custom inputs; queries compare UTC-to-UTC
+- [x] Use half-open time intervals. → `TimeWindow` is `[start, end)`; tests pin adjacency (`yesterday.end == today.start`) and edge ownership
+- [x] Exclude unavailable totals from numerical sums. → `SUM` skips NULLs; unknown rows contribute 0 to totals
+- [x] Report incomplete coverage separately. → `UsageSummary` carries `known_total_events` + `unknown_total_events`; per-model too
+- [x] Keep providers distinguishable even when model names match. → breakdown groups by `(provider_id, model_id)`; test pins two providers sharing one model name
+
+### Implementation
+
+| File | Concern |
+|---|---|
+| `aggregation/windows.py` | `TimeWindow` plus today/yesterday/last-7-days/current-month/previous-month/current-year/all-time/custom builders |
+| `aggregation/filters.py` | `UsageFilter` (platform/provider/model) shared by every aggregation |
+| `aggregation/summary.py` | `summarize_range` — one grouped SQL query returning `UsageSummary` |
+| `aggregation/breakdown.py` | `breakdown_by_model` — per `(provider, model)` rows ordered by total |
+| `aggregation/timeline.py` | `bucket_timeline` — day/month/year edges built in-zone (DST-safe), totals per bucket |
+| `errors/exceptions.py` | `AggregationError`, `InvalidTimezoneError`, `InvalidTimeRangeError`, `InvalidGranularityError` |
 
 ### Completion Criteria
 
 Daily, monthly, yearly, and model-wise totals are accurate and consistent.
+→ **Verified**: 1,932 live records — all-time input 8,911,834 / output 547,391 /
+total 9,459,225 (~8.9M/547K per `opencode stats`); breakdown sums
+(requests, totals) equal the summary exactly; a 31-day timeline reconciles
+exactly with its month summary. 30 aggregation tests
+(`test_aggregation*.py`), 227 passed + 1 skipped repo-wide; ruff and mypy
+strict clean.
 
 ---
 
