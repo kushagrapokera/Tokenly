@@ -345,32 +345,46 @@ Preserve current OpenCode dashboard behavior.
 
 ## 11. Phase 8 — Testing and Regression Validation
 
+**Status: done.** Every item below was audited against the tests that actually
+exist rather than assumed. Each was already covered except the two marked
+**new**, which were written for this phase because they were implied rather than
+stated: free and paid models being treated identically (plan §4.4), and both
+collectors demonstrably sharing one normaliser (Phase 3). Both are now mutation-
+checked — dropping a free-tier model or folding Cline's cache into its per-call
+total each fails the suite.
+
 ### Cline-Specific Tests
 
-- [ ] Cline storage discovery.
-- [ ] Historical session parsing.
-- [ ] Model identification.
-- [ ] Provider identification.
-- [ ] Input token extraction.
-- [ ] Output token extraction.
-- [ ] Model switching.
-- [ ] Multiple providers.
-- [ ] Free and paid models where usage is available.
-- [ ] Subagent accounting.
-- [ ] Retry handling.
-- [ ] Incomplete usage.
-- [ ] Duplicate prevention.
+- [x] Cline storage discovery. → `test_locator.py`, `test_discovery_works_without_a_session_index`
+- [x] Historical session parsing. → `test_history_returns_one_record_per_assistant_message`
+- [x] Model identification. → `test_record_carries_provider_model_and_session_identity`
+- [x] Provider identification. → same, plus `test_two_providers_serving_one_model_name_stay_distinct`
+- [x] Input token extraction. → `test_token_fields_follow_the_phase_1_field_map`
+- [x] Output token extraction. → same
+- [x] Model switching. → `test_model_switching_attributes_each_record_to_its_own_model`
+- [x] Multiple providers. → `test_multiple_models_in_one_session_stay_separate`, and the two-provider case above
+- [x] **Free and paid models where usage is available.** → **new**: `test_phase8_checklist.py`
+- [x] Subagent accounting. → `test_a_subagent_session_is_attributed_to_its_own_session_and_model`
+- [x] Retry handling. → `test_a_retried_call_keeps_the_failure_and_the_success_apart`
+- [x] Incomplete usage. → `test_error_display_is_stored_as_unavailable`, `test_missing_usage_is_stored_as_unknown_and_kept_out_of_totals`
+- [x] Duplicate prevention. → `test_resume_duplicate_ids_stay_distinct_per_session`, `test_a_resumed_session_copy_is_stored_separately_without_double_counting`
 
 ### Shared Integration Tests
 
-- [ ] OpenCode and Cline use the same database.
-- [ ] Both use the same normalization pipeline.
-- [ ] Both use the same aggregation logic.
-- [ ] Platform filtering works.
-- [ ] Combined totals are correct.
-- [ ] Synchronization is independent per platform.
-- [ ] Existing OpenCode history remains intact.
-- [ ] Existing OpenCode tests continue passing.
+- [x] OpenCode and Cline use the same database. → `test_both_collectors_share_one_database`
+- [x] Both use the same normalization pipeline. → **new**: `test_identical_usage_normalizes_identically_on_both_platforms`, and the cache and missing-usage cases beside it
+- [x] Both use the same aggregation logic. → `test_platform_filtering_separates_the_two_sources`, `test_analytics_platforms.py`
+- [x] Platform filtering works. → `test_the_combined_view_adds_both_platforms` and the per-platform cases
+- [x] Combined totals are correct. → `test_each_platform_can_be_viewed_on_its_own`, `test_the_model_breakdown_reconciles_with_the_combined_summary`
+- [x] Synchronization is independent per platform. → `test_each_platform_resumes_from_its_own_checkpoint`, `test_a_failing_collector_does_not_stop_the_others`
+- [x] Existing OpenCode history remains intact. → `test_cline_sync_leaves_opencode_history_intact`
+- [x] Existing OpenCode tests continue passing. → 412 backend tests, green on every commit
+
+**Not covered, deliberately.** No test runs both collectors against the *live*
+stores on every run — those are the learning tests, which skip when a store is
+absent so the suite stays green on a machine without both assistants. The
+cross-platform guarantees are therefore proven against stand-in stores, which is
+what makes them deterministic.
 
 ## 12. Phase 9 — Collection Performance
 
