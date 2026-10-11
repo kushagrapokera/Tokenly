@@ -8,7 +8,8 @@ The platform must track usage independently of the API keys, subscriptions, or m
 
 The project is being developed incrementally, with one platform integration completed at a time.
 
-**Current focus: Cline CLI**
+**Current state: OpenCode and Cline CLI are both complete** (see §2 and §9). One
+dashboard visualisation is still outstanding — platform usage comparison, §5.4.
 
 ---
 
@@ -17,11 +18,26 @@ The project is being developed incrementally, with one platform integration comp
 | Platform | Status | Priority |
 |---|---|---|
 | OpenCode | ✅ Done | Completed |
-| Cline CLI | 🔄 In Progress | Current |
+| Cline CLI | ✅ Done | Completed |
 | Codex CLI | ⏳ Planned | Future |
 | Claude Code | ⏳ Planned | Future |
 | Antigravity | ⏳ Planned | Future |
 | FreeBuff | ⏳ Planned | Future |
+
+**Cline CLI is complete**, verified against the live stores: all 21 success
+criteria in §9 pass, both platforms collect automatically, and the dashboard
+filters by platform. Two items remain open, neither blocking:
+
+1. **Platform usage comparison** (§5.4) is the one visualisation not built. It
+   needs new UI rather than wiring, so it was deferred in Phase 7 in favour of
+   the per-platform filter and the platform column, which answer the same
+   question a click apart.
+2. **Phase B** of the performance plan is held — deliberately, not unfinished. See
+   `parallelism.md` §13 for the measurement behind it and the conditions that
+   would reopen it.
+
+Adding a further platform now requires only the collector contract; see
+`parallelism.md` §11.
 
 ### Completed: OpenCode
 
@@ -40,11 +56,15 @@ Its intended capabilities include:
 
 No additional OpenCode development is included in the current scope.
 
-### Current: Cline CLI
+### Completed: Cline CLI
 
-The next objective is to add Cline CLI to the existing token tracking platform.
+Cline CLI was added to the existing tracker rather than built as a separate one.
+It shares the database, the normalization pipeline, the aggregation, the API,
+and the dashboard; the only Cline-specific code is the collector itself
+(`collectors/cline/`) plus three lines registering it.
 
-Cline CLI must integrate with the same unified usage tracking experience without requiring changes to existing OpenCode functionality.
+It collects automatically on the same schedule as OpenCode, on its own
+checkpoint, so neither platform can block or corrupt the other.
 
 ---
 
@@ -372,29 +392,33 @@ These features may be added in future releases.
 
 # 9. Cline CLI Success Criteria
 
-The Cline CLI integration is considered complete when:
+All of the following were verified against the live stores on 2026-10-12 rather
+than assumed from the phase list. Measured that day: 202,024,393 tokens across
+both platforms, of which Cline 189,250,734.
 
-- [ ] Cline CLI is automatically detected.
-- [ ] Available historical usage is imported.
-- [ ] New usage is collected automatically.
-- [ ] Input tokens are tracked.
-- [ ] Output tokens are tracked.
-- [ ] Total tokens are calculated accurately.
-- [ ] Daily usage statistics are available.
-- [ ] Monthly usage statistics are available.
-- [ ] Yearly usage statistics are available.
-- [ ] Model-wise usage statistics are available.
-- [ ] Provider-wise identification works.
-- [ ] Free and paid models are supported wherever usage metadata exists.
-- [ ] Multiple sessions are handled correctly.
-- [ ] Model switching is handled correctly.
-- [ ] Duplicate usage is prevented.
-- [ ] Historical data is preserved.
-- [ ] No API keys are required.
-- [ ] Cline CLI configuration remains unchanged.
-- [ ] Existing OpenCode tracking continues working.
-- [ ] Combined OpenCode and Cline CLI statistics are accurate.
-- [ ] Missing or incomplete usage is clearly indicated.
+The Cline CLI integration is complete when:
+
+- [x] Cline CLI is automatically detected. → `collectors/cline/locator.py`, verified live against `~/.cline/data`
+- [x] Available historical usage is imported. → 2,142 records on first run
+- [x] New usage is collected automatically. → `sync/scheduler.py`; a pass at startup, then every `sync_interval_seconds`
+- [x] Input tokens are tracked. → `test_token_fields_follow_the_phase_1_field_map`
+- [x] Output tokens are tracked. → same
+- [x] Total tokens are calculated accurately. → computed as input + output, never read from the source
+- [x] Daily usage statistics are available. → `/api/usage/daily`
+- [x] Monthly usage statistics are available. → `/api/usage/monthly`
+- [x] Yearly usage statistics are available. → `/api/usage/yearly`
+- [x] Model-wise usage statistics are available. → `/api/usage/models`, grouped by platform, provider, and model
+- [x] Provider-wise identification works. → two providers serving one model name stay separate
+- [x] Free and paid models are supported wherever usage metadata exists. → `test_a_free_model_is_stored_exactly_like_a_paid_one`; no price is consulted
+- [x] Multiple sessions are handled correctly. → 42 sessions, each attributed to its own id
+- [x] Model switching is handled correctly. → per-message; `test_model_switching_attributes_each_record_to_its_own_model`
+- [x] Duplicate usage is prevented. → upsert on `(platform, source_event_id)`; repeat scans update in place
+- [x] Historical data is preserved. → deleting a source session leaves stored rows intact
+- [x] No API keys are required. → `providers.json` is never opened; nothing references a credential
+- [x] Cline CLI configuration remains unchanged. → 85 session files byte-identical after a full sync
+- [x] Existing OpenCode tracking continues working. → checkpoint, schema and tests untouched; 12,773,659 tokens still collected
+- [x] Combined OpenCode and Cline CLI statistics are accurate. → combined equals the sum of the two, to the token
+- [x] Missing or incomplete usage is clearly indicated. → 28 unreported Cline calls shown as `is_complete: false`, never as zero
 
 ---
 
@@ -408,15 +432,17 @@ Marked completed for this project.
 
 ## Cline CLI
 
-**Status: IN PROGRESS**
+**Status: DONE**
 
-Current development target.
+Integrated into the existing tracker. All §9 criteria verified against the live
+stores; see `implementation.md` for the phase-by-phase record.
 
 ## Other Platforms
 
 **Status: PLANNED**
 
-Not included in the current development scope.
+Not included in the current development scope. Adding one requires only the
+collector contract (`parallelism.md` §11).
 
 ---
 

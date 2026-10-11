@@ -447,19 +447,19 @@ removed fixed per-scan cost, which is what actually dominated.
 
 Cline integration is complete when:
 
-- [ ] Cline CLI usage is collected automatically.
-- [ ] Available historical usage is imported.
-- [ ] Token counts are attributed to the correct models.
-- [ ] Multiple providers are supported.
-- [ ] Daily, monthly, yearly, and all-time totals work.
-- [ ] Cline usage appears in the existing dashboard.
-- [ ] Combined OpenCode and Cline totals work.
-- [ ] Existing shared components are reused wherever compatible.
-- [ ] No unnecessary duplicate services are introduced.
-- [ ] No separate application or database is created.
-- [ ] No API keys or proxy configuration are required.
-- [ ] Existing OpenCode functionality remains intact.
-- [ ] Regression tests pass.
+- [x] Cline CLI usage is collected automatically. → startup pass plus `sync_interval_seconds`, verified on the live stores
+- [x] Available historical usage is imported. → 2,142 records on first run
+- [x] Token counts are attributed to the correct models. → per-message attribution; 12 model rows across both platforms
+- [x] Multiple providers are supported. → provider recorded per row; two providers sharing a model name stay distinct
+- [x] Daily, monthly, yearly, and all-time totals work. → `test_analytics_platforms.py`, 20 tests over both platforms
+- [x] Cline usage appears in the existing dashboard. → platform filter, platform column, and a row per platform in the tracking panel
+- [x] Combined OpenCode and Cline totals work. → combined equals the sum of the two, to the token
+- [x] Existing shared components are reused wherever compatible. → no shared service changed in phase 3 or 6; the collector is the only Cline-specific code
+- [x] No unnecessary duplicate services are introduced. → one normalizer, one database, one scheduler, one set of endpoints
+- [x] No separate application or database is created. → `usage_events` and `collector_state` in one SQLite file
+- [x] No API keys or proxy configuration are required. → `providers.json` is never opened
+- [x] Existing OpenCode functionality remains intact. → its checkpoint, schema and tests untouched; still collecting 12,773,659 tokens
+- [x] Regression tests pass. → 448 backend, 59 frontend, ruff and mypy clean
 
 ## 15. Final Instruction to the Coding Agent
 
