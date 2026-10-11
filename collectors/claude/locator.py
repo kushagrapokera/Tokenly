@@ -22,6 +22,7 @@ from config.settings import Settings
 logger = logging.getLogger(__name__)
 
 PROJECTS_DIRECTORY_NAME = "projects"
+CLAUDE_CONFIG_ENV_VAR = "CLAUDE_CONFIG_DIR"
 
 
 def resolve_data_directory(settings: Settings) -> Path:
@@ -46,7 +47,7 @@ def resolve_projects_directory(settings: Settings) -> Path:
 
 def _read_data_directory_from_environment() -> Path | None:
     """Return `CLAUDE_CONFIG_DIR` when set; None otherwise."""
-    configured = os.environ.get("CLAUDE_CONFIG_DIR")
+    configured = os.environ.get(CLAUDE_CONFIG_ENV_VAR)
     if not configured:
         return None
     directory = Path(configured).expanduser()
