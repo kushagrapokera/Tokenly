@@ -652,18 +652,47 @@ Expose usage data to the dashboard.
 
 ### API Requirements
 
-- Validate date-range parameters.
-- Support provider and model filtering.
-- Return consistent JSON responses.
-- Include data completeness indicators.
-- Handle empty results.
-- Handle collection errors.
-- Bind the local API to loopback by default.
-- Restrict cross-origin access to the local frontend.
+- [x] Validate date-range parameters. → `range` must name a registered range (`aggregation/ranges.py`); `custom` needs both bounds, ordered; unknown names, unknown timezones, and bad granularities all return 400 with the reason
+- [x] Support provider and model filtering. → `provider_id`, `model_id`, `platform` accepted by every usage endpoint and echoed back in `filters`
+- [x] Return consistent JSON responses. → every usage response carries the same envelope: `window` (range, label, bounds, timezone), `filters`, `generated_at`
+- [x] Include data completeness indicators. → `completeness` on summaries, `unknown_total_events` per model
+- [x] Handle empty results. → zeroes and empty lists, never an error; pinned by tests against an empty database
+- [x] Handle collection errors. → a failed scan is reported as `succeeded: false` with its message and leaves status `error`; an unknown platform is a 404 naming the known ones
+- [x] Bind the local API to loopback by default. → `host = 127.0.0.1`
+- [x] Restrict cross-origin access to the local frontend. → CORS allows only the configured local dev origins, GET only; a foreign `Origin` gets no allow-header
+
+### Implementation
+
+| File | Concern |
+|---|---|
+| `aggregation/ranges.py` | the named ranges the API accepts, each mapped to a window builder |
+| `routes/dependencies.py` | the shared `range`/`timezone`/filter parameters and the per-request session |
+| `routes/usage.py` | summary, daily, monthly, yearly, models, timeline |
+| `routes/collector.py` | collector status and manual rescan |
+| `schemas/analytics.py` | the response envelope, built from the aggregation dataclasses |
+| `schemas/collector.py` | status and rescan bodies |
+| `errors/handlers.py` | domain error → status code, registered once on the app |
+| `collectors/registry.py` | which collectors this build runs |
+| `sync/factory.py` | builds a sync service from settings |
+| `config/settings.py` | default timezone, CORS origins, rescan overlap |
+
+Routes raise domain errors rather than catching them; `errors/handlers.py` decides the
+status code, so validation lives with the logic it validates and no route repeats it.
+
+`SyncService.run` gained `from_scratch`, which ignores the stored checkpoint. A full
+re-read is safe because the upsert is idempotent, so rescans update rows rather than
+adding them.
 
 ### Completion Criteria
 
 All dashboard data can be retrieved through tested API endpoints.
+→ **Verified** against the live database (1,993 real records): the all-time summary
+reports input 8,974,997 / output 568,925 / total 9,543,922 with `is_complete: true`;
+model breakdown sums equal the summary exactly on both totals and request count; the
+yearly, monthly, and daily timelines each reconcile with their own range's summary, in
+five timezones including one across a DST transition, all summing to 9,543,922. Three
+consecutive rescans inserted 0 rows and left every total unchanged. A foreign `Origin`
+receives no CORS header. 61 API tests, 288 passed repo-wide; ruff and mypy strict clean.
 
 ---
 
