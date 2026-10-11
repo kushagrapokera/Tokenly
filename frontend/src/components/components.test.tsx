@@ -427,7 +427,7 @@ describe('FilterBar', () => {
     mockFetch({
       '/api/usage/models': makeModels({
         models: [
-          { platform: 'codex', provider_id: 'openai', model_id: 'gpt', request_count: 1, totals: { input_tokens: 1, output_tokens: 1, total_tokens: 2, consumption_tokens: 2 }, unknown_total_events: 0 },
+          { platform: 'aider', provider_id: 'openai', model_id: 'gpt', request_count: 1, totals: { input_tokens: 1, output_tokens: 1, total_tokens: 2, consumption_tokens: 2 }, unknown_total_events: 0 },
         ],
       }),
     })
@@ -437,8 +437,8 @@ describe('FilterBar', () => {
     const platform = await screen.findByLabelText('Platform')
 
     // An unrecognised id falls back to itself rather than rendering blank.
-    expect([...platform.querySelectorAll('option')].map((o) => o.value)).toContain('codex')
-    expect(screen.getByRole('option', { name: 'codex' })).toBeInTheDocument()
+    expect([...platform.querySelectorAll('option')].map((o) => o.value)).toContain('aider')
+    expect(screen.getByRole('option', { name: 'aider' })).toBeInTheDocument()
   })
 
   it('reveals date inputs only for a custom range', async () => {

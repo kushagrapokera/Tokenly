@@ -37,6 +37,8 @@ export const DEFAULT_FILTERS: DashboardFilters = {
 export const PLATFORM_LABELS: Record<string, string> = {
   opencode: 'OpenCode',
   cline: 'Cline',
+  claude_code: 'Claude Code',
+  codex: 'Codex',
 }
 
 /**

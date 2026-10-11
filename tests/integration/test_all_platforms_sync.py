@@ -1,8 +1,8 @@
-"""Phase 8: all four collectors share one storage and synchronization path.
+"""All four collectors share one storage, sync, and analytics path (Phases 8–9).
 
 The Phase 1/2 integration tests proved each platform individually, and the
 coordinator tests proved isolation with stub collectors. These tests close the
-Phase 8 exit criteria against the *real* registry and the *real* collectors:
+Phase 8 and Phase 9 exit criteria against the *real* registry and collectors:
 
   * `build_collectors` registers OpenCode, Cline, Claude Code, and Codex.
   * `build_sync_coordinator` drives all four through the same `SyncService`,
@@ -10,6 +10,8 @@ Phase 8 exit criteria against the *real* registry and the *real* collectors:
   * Re-syncing never duplicates a record on any platform.
   * One platform failing never stops the others from storing.
   * Imported history survives the source store being deleted.
+  * The shared analytics — breakdown and platform-filtered summaries — show all
+    four platforms with correct combined and filtered totals (the dashboard's data).
 """
 
 from collections.abc import Iterator
@@ -19,6 +21,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from aggregation.breakdown import breakdown_by_model
+from aggregation.filters import UsageFilter
 from aggregation.ranges import resolve_range
 from aggregation.summary import summarize_range
 from collectors.base import BaseCollector, ScanOutcome
@@ -179,6 +183,43 @@ def test_history_survives_deleting_the_source_store(
     assert by_platform["codex"].scanned == 0
     with session_factory() as session:
         assert count_usage_events(session, "codex") == 1  # history preserved
+
+
+def test_breakdown_lists_all_four_platforms(
+    settings: Settings,
+    session_factory: sessionmaker[Session],
+) -> None:
+    # The dashboard's model breakdown is what populates its platform filter, so
+    # every platform must appear here for it to be selectable.
+    coordinator = build_sync_coordinator(build_collectors(settings), settings)
+    coordinator.run_all(session_factory)
+
+    with session_factory() as session:
+        rows = breakdown_by_model(session, resolve_range("all_time", "UTC"))
+
+    assert {row.platform for row in rows} == set(PLATFORMS)
+
+
+def test_combined_total_equals_the_sum_of_platform_filtered_totals(
+    settings: Settings,
+    session_factory: sessionmaker[Session],
+) -> None:
+    # The dashboard's headline total must equal the sum of each platform's own
+    # filtered total — the Phase 9 "correct combined and filtered totals" check.
+    coordinator = build_sync_coordinator(build_collectors(settings), settings)
+    coordinator.run_all(session_factory)
+
+    with session_factory() as session:
+        window = resolve_range("all_time", "UTC")
+        combined = summarize_range(session, window)
+        per_platform = {
+            platform: summarize_range(session, window, UsageFilter(platform=platform))
+            for platform in PLATFORMS
+        }
+
+    assert all(summary.request_count == 1 for summary in per_platform.values())
+    assert combined.request_count == sum(s.request_count for s in per_platform.values())
+    assert combined.total_tokens == sum(s.total_tokens for s in per_platform.values())
 
     def collect_updates(self, checkpoint: str | None = None) -> list:
         raise RuntimeError("simulated platform failure")
