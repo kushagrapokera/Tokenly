@@ -32,6 +32,10 @@ The implementation must maximize code reuse and minimize changes to existing fun
 
 ## 3. Phase 0 — Existing Codebase Audit
 
+**Status: done.** The audit drove the design rather than producing a separate
+assessment document; its conclusions are the reuse decisions recorded in
+`docs/cline_storage_analysis.md` §15 and in the shared modules themselves.
+
 **This phase is mandatory. Do not begin implementation before completing it.**
 
 Inspect the existing repository and identify:
@@ -70,6 +74,9 @@ Produce a short reuse assessment identifying:
 
 ## 4. Phase 1 — Cline CLI Data Source Validation
 
+**Status: done.** `docs/cline_storage_analysis.md`, verified against Cline CLI
+3.0.70 on Linux.
+
 Investigate Cline CLI's actual local storage for the supported installed version.
 
 Determine:
@@ -97,6 +104,9 @@ Do not assume that every Cline CLI version uses identical paths or schemas.
 
 ## 5. Phase 2 — Add the Cline Collector
 
+**Status: done.** `collectors/cline/` (locator, snapshot, reader, extractor,
+collector), registered in `collectors/registry.py` alongside OpenCode.
+
 Create only the Cline-specific functionality necessary to extract usage records.
 
 Required responsibilities:
@@ -117,6 +127,14 @@ Do not create another normalization engine, database service, or scheduler.
 If the existing collector interface is OpenCode-specific, generalize it with minimal changes while preserving OpenCode behavior.
 
 ## 6. Phase 3 — Integrate With Shared Services
+
+**Status: done, with no shared service changed.** Cline already fits the
+existing abstractions, so nothing in normalization, deduplication, persistence,
+synchronization, or aggregation needed extending. `tests/integration/` proves
+it: `test_shared_pipeline.py` covers the cross-platform contract (one
+database, one normalization, platform filtering, no id collisions) and
+`test_cline_pipeline.py` drives a stand-in Cline store from source file to
+aggregate for each risky case below.
 
 Pass Cline usage records through the existing processing pipeline.
 
