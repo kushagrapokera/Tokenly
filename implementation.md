@@ -1,5 +1,8 @@
 # Cline CLI Integration — Implementation Plan
 
+> Collection performance, and how the design scales as more platforms are added,
+> is worked out separately in [`parallelism.md`](parallelism.md).
+
 ## 1. Project Context
 
 This project is an existing unified AI token usage tracker.
@@ -208,6 +211,28 @@ Ensure Cline and OpenCode events cannot collide even if their source identifiers
 
 ## 8. Phase 5 — Extend Existing Synchronization
 
+**Status: done.** Registration already existed; what was missing was anything to
+*run* it. Starting the server previously imported nothing — collection happened
+only when the rescan endpoint was called.
+
+- `sync/coordinator.py` runs every registered collector, one platform at a time,
+  each in its own session. A platform whose data is absent is skipped rather than
+  recorded as an error, because not having Cline installed is a normal state. A
+  platform that fails never stops the others.
+- `sync/scheduler.py` runs a pass at startup and then on `sync_interval_seconds`.
+  Scans run in a worker thread so a cold history cannot block the API, and
+  shutdown is cooperative: the scheduler waits on an event, so closing the
+  server neither waits out the interval nor starts another pass.
+- The manual rescan endpoint is unchanged and still works alongside it.
+
+Both settings (`sync_enabled`, `sync_interval_seconds`) exist so a test or a
+headless run can turn automatic collection off.
+
+Platforms were scanned sequentially in this phase. That was a safe first step, not
+a settled design: only the *write* has to be serialised, since SQLite permits one
+writer, and parallel collection is both safe and faster. Phase 9 tracks that
+work.
+
 Register the Cline collector with the existing collection mechanism.
 
 Reuse existing:
@@ -229,6 +254,28 @@ Ensure:
 - Imported history survives source deletion.
 
 ## 9. Phase 6 — Extend Existing Analytics
+
+**Status: done, with one correction.** No Cline-specific aggregation was written.
+The shared summary, timeline, and breakdown functions already read normalized rows
+from any platform, and the API already accepted `platform`, `provider_id`, and
+`model_id` on every usage endpoint, so all three views and all six metrics work
+for Cline as they do for OpenCode.
+
+What was wrong was the model breakdown's group key. It grouped by
+`(provider_id, model_id)`, so two platforms serving the same model name would have
+been merged into one row with no way to tell whose usage it was — the exact
+attribution error the platform column exists to prevent, and the plan requires
+platform in that table. The key is now `(platform, provider_id, model_id)` and
+every breakdown row names its platform.
+
+`tests/test_analytics_platforms.py` proves the three views and six metrics per
+platform, that a breakdown reconciles with its summary, that unreported Cline
+usage is surfaced as incomplete rather than counted as zero, and that bucketing
+follows the requested timezone.
+
+Measured against the live stores: Cline 189,250,734 tokens across 2,142 requests
+with 28 unreported, matching its breakdown exactly, and the combined figure is
+the sum of the two platforms.
 
 Reuse all existing time-based and model-based aggregation logic.
 
@@ -296,7 +343,23 @@ Preserve current OpenCode dashboard behavior.
 - [ ] Existing OpenCode history remains intact.
 - [ ] Existing OpenCode tests continue passing.
 
-## 12. Implementation Priority
+## 12. Phase 9 — Collection Performance
+
+**Status: planned.** The design, the measurements behind it, and the rollout
+order are in [`parallelism.md`](parallelism.md). Nothing in that document is
+implemented yet.
+
+Scope in one line: make a collection pass cheap enough that the sync interval can
+drop from five minutes to about one, without changing what is stored.
+
+- The largest single item is `opencode debug paths` — a ~590 ms subprocess run on
+  every scan *and* every status view — cached once instead.
+- Then a bulk upsert replacing a per-row `UPDATE` loop (1,125 ms), and a skipped
+  snapshot when the source database has not changed (172 ms).
+- Parallel collection across batches comes last, and only if the measurements
+  still justify it after the above.
+
+## 13. Implementation Priority
 
 | Priority | Task | Action |
 |---|---|---|
@@ -311,8 +374,9 @@ Preserve current OpenCode dashboard behavior.
 | P1 | API platform support | Reuse / extend |
 | P1 | Dashboard platform support | Reuse / extend |
 | P0 | Cline and OpenCode regression tests | Extend |
+| P1 | Collection performance | Plan in [`parallelism.md`](parallelism.md) |
 
-## 13. Definition of Done
+## 14. Definition of Done
 
 Cline integration is complete when:
 
@@ -330,7 +394,7 @@ Cline integration is complete when:
 - [ ] Existing OpenCode functionality remains intact.
 - [ ] Regression tests pass.
 
-## 14. Final Instruction to the Coding Agent
+## 15. Final Instruction to the Coding Agent
 
 **This task is an incremental integration into an existing codebase.**
 
@@ -340,7 +404,9 @@ Reuse all compatible existing functionality.
 
 Implement only the Cline-specific components and minimal shared changes required for compatibility.
 
-Do not create parallel infrastructure for Cline.
+Do not create parallel infrastructure for Cline — meaning a Cline-only fork of
+something that already exists. Shared infrastructure that every platform uses is
+the opposite of that, and is what Phase 9 adds.
 
 Do not rewrite existing functionality merely to introduce a new platform.
 
