@@ -32,18 +32,10 @@ These rules apply to every prompt and every file in this project.
 - One top-level folder per concern (Spring-style): config/, errors/,
   logging_setup/, routes/, services/, templates/, static/, tests/.
   Entry point is main.py at the project root.
-- Every new concern gets its own folder (e.g. sandboxes/ in Phase 2),
+- Every new concern gets its own folder (e.g. sandboxes/ ),
   never one growing dump file.
 - Never name a folder after a Python stdlib module — hence
-  logging_setup/, not logging/.
-
-## Code conventions
-- Keep the diff view (F7) as one reusable component — it serves both
-  the browse view and the PR page.
-- Server logic stays thin: prefer a shell-out to git over growing
-  custom git plumbing.
-- Every feature gets a "Done when" check from phase1.txt — verify it
-  before declaring the feature complete.
+  logging_setup/, not logging
 
 ## Clean Code skills (installed for this project)
 `.claude/skills/` holds 16 code-quality checkers derived from *Clean Code*

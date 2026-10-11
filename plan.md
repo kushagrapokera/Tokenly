@@ -1,51 +1,74 @@
-# OpenCode Token Usage Tracker — Project Plan
+# Universal AI Token Usage Tracker — plan.md
 
 ## 1. Project Overview
 
-Build a local-first application that automatically tracks token usage across different AI models used through **OpenCode**, regardless of the model provider or API key configuration.
+Build a local-first, unified AI token usage tracking platform that allows developers to monitor token consumption across different AI coding assistants, models, and providers.
 
-The application will provide a centralized dashboard where users can view their total token consumption, analyze usage over different time periods, and identify how many tokens each model has consumed.
+The platform must track usage independently of the API keys, subscriptions, or model providers configured within each coding assistant.
 
-The tracker should work without requiring users to modify their existing OpenCode configuration or provide API keys.
+The project is being developed incrementally, with one platform integration completed at a time.
 
-The project will initially support **OpenCode only**, with the possibility of integrating additional AI coding platforms in the future.
-
----
-
-## 2. Project Objectives
-
-The primary objectives are:
-
-1. Track total token consumption through OpenCode.
-2. Track token usage on a daily, monthly, and yearly basis.
-3. Track token consumption separately for every model used within OpenCode.
-4. Support models accessed through different providers.
-5. Support both free and paid models.
-6. Automatically collect available token usage information.
-7. Preserve historical usage data for long-term analysis.
-8. Provide a simple and intuitive dashboard.
+**Current focus: Cline CLI**
 
 ---
 
-## 3. Core Features
+## 2. Platform Integration Status
 
-### 3.1 Total Token Usage
+| Platform | Status | Priority |
+|---|---|---|
+| OpenCode | ✅ Done | Completed |
+| Cline CLI | 🔄 In Progress | Current |
+| Codex CLI | ⏳ Planned | Future |
+| Claude Code | ⏳ Planned | Future |
+| Antigravity | ⏳ Planned | Future |
+| FreeBuff | ⏳ Planned | Future |
 
-Display the total number of tokens consumed through OpenCode.
+### Completed: OpenCode
 
-The application should track:
+The OpenCode integration is marked as completed.
 
-- Input tokens
-- Output tokens
-- Total tokens consumed
+Its intended capabilities include:
 
-Token counts should be based on usage reported by OpenCode wherever available.
+- Automatic collection of available token usage
+- Daily, monthly, and yearly token statistics
+- Model-wise token consumption
+- Multiple provider support
+- Free and paid model support
+- Historical usage tracking
+- Duplicate prevention
+- Local data persistence
 
-### 3.2 Time-Based Token Tracking
+No additional OpenCode development is included in the current scope.
 
-Users should be able to view their token consumption across different periods.
+### Current: Cline CLI
 
-Supported periods:
+The next objective is to add Cline CLI to the existing token tracking platform.
+
+Cline CLI must integrate with the same unified usage tracking experience without requiring changes to existing OpenCode functionality.
+
+---
+
+## 3. Core Project Objectives
+
+The platform must provide three primary capabilities:
+
+### 3.1 Platform-Wise Token Usage
+
+Track total tokens consumed by each supported AI coding platform independently.
+
+For example:
+
+| Platform | Total Tokens |
+|---|---:|
+| OpenCode | 2,500,000 |
+| Cline CLI | 1,200,000 |
+| Combined | 3,700,000 |
+
+*Illustrative values.*
+
+### 3.2 Time-Based Token Usage
+
+Track token consumption across:
 
 - Today
 - Yesterday
@@ -54,245 +77,363 @@ Supported periods:
 - Previous month
 - Current year
 - All-time usage
-- Custom date range
+- Custom date ranges
 
-The application should correctly aggregate usage based on the user's selected timezone.
+Users must be able to view combined usage across supported platforms or filter by an individual platform.
 
-### 3.3 Model-Wise Token Tracking
+### 3.3 Model-Wise Token Usage
 
-Track token usage independently for each model used through OpenCode.
+Track token consumption separately for every model used within each platform.
 
-For every model, display:
+Example:
 
-- Model name
-- Provider name
-- Input tokens
-- Output tokens
-- Total tokens consumed
-- Number of recorded requests
+| Platform | Model | Total Tokens |
+|---|---|---:|
+| OpenCode | Claude Sonnet | 900,000 |
+| OpenCode | GPT | 600,000 |
+| Cline CLI | Claude Sonnet | 450,000 |
+| Cline CLI | Gemini | 300,000 |
 
-If a user switches between models within the same OpenCode session, the application should attribute usage to the correct model.
+The same model used in two different platforms must be tracked independently.
 
-### 3.4 Multi-Provider Support
+---
 
-The tracker should work independently of the provider used within OpenCode.
+# 4. Cline CLI Integration Requirements
 
-Examples include:
+## 4.1 Automatic Cline CLI Detection
 
+The application must automatically detect an existing Cline CLI installation and locate its available session history.
+
+Requirements:
+
+- Support Windows, Linux, and macOS.
+- Detect the active Cline CLI data directory.
+- Support default and custom data locations.
+- Support compatible Cline CLI versions.
+- Identify available session records.
+- Work without modifying Cline CLI configuration.
+- Work without requiring API keys.
+
+If Cline CLI is not installed or no session data is available, the application must clearly communicate this.
+
+## 4.2 Automatic Token Collection
+
+The application must collect available token usage information from Cline CLI's local records or supported interfaces.
+
+For each recorded model request, collect:
+
+- Platform identifier
+- Model identifier
+- Provider identifier
+- Input token count
+- Output token count
+- Timestamp
+- Session identifier
+- Unique usage identifier, where available
+
+The application must distinguish actual usage events from repeated or cumulative records.
+
+Token collection must not depend on the model's price.
+
+## 4.3 Provider-Independent Tracking
+
+Cline CLI supports multiple model providers.
+
+The tracker should support token collection for models accessed through:
+
+- Cline's own provider
 - OpenAI
 - Anthropic
 - Google
 - OpenRouter
-- Ollama
-- Other OpenCode-supported providers
+- OpenAI-compatible providers
+- Ollama and other supported local-model providers
+- Additional Cline-compatible providers
 
-Users should not need to provide API keys to the tracker.
+Users must not be required to provide their provider API keys to the token tracker.
 
-The application should distinguish between models with identical names accessed through different providers.
+The tracker must use available usage metadata rather than assuming that every provider reports tokens identically.
 
-### 3.5 Free and Paid Model Support
+## 4.4 Free and Paid Model Support
 
-The application must support token tracking for:
+The tracker must support:
 
 - Free hosted models
 - Paid API models
 - Subscription-based models
-- Locally hosted models
+- Local models
 - Third-party provider models
 
-Token usage tracking must not depend on whether a model is free or paid.
+Free models must be tracked in the same way as paid models whenever reliable usage metadata is available.
 
-If a provider does not expose token usage information, the application must clearly indicate that the usage data is unavailable rather than displaying an incorrect count.
+The application must not exclude a model simply because its usage has no associated API cost.
 
-### 3.6 Automatic Usage Collection
+If token metadata is unavailable, the application must indicate missing information rather than report an incorrect zero.
 
-The application should automatically collect available token usage information from OpenCode's local session data or supported local interfaces.
+## 4.5 Historical Token Usage
 
-Expected behavior:
-
-- No manual token entry
-- No API key requirements
-- No API proxy configuration
-- No modifications to OpenCode
-- No interruption to normal OpenCode usage
-
-The tracker should operate independently of the user's existing OpenCode setup.
-
-### 3.7 Historical Usage Tracking
-
-The application should display historical usage wherever records are available.
+The application must import available Cline CLI historical usage.
 
 Expected behavior:
 
-- Import available usage history when first installed.
-- Preserve collected usage for future reference.
-- Continue tracking new usage.
-- Prevent duplicate counting.
-- Retain previously collected usage even if OpenCode removes older session records.
+- Discover existing sessions.
+- Collect available historical token records.
+- Preserve their original timestamps.
+- Associate tokens with the correct model and provider.
+- Avoid duplicate historical records.
+- Preserve imported data independently of Cline CLI.
 
-Historical usage before installation is limited to data that remains available.
+Historical usage before tracker installation is limited to records still available locally.
 
-### 3.8 Automatic Updates
+## 4.6 Continuous Usage Tracking
 
-The application should update token statistics as new usage information becomes available.
+The application must automatically detect new Cline CLI usage as it becomes available.
 
-Users should not need to manually refresh or reimport their session history.
+Expected behavior:
 
-The tracker should resume tracking after application restarts without duplicating existing records.
+- Track newly created sessions.
+- Track usage added to existing sessions.
+- Recognize model changes.
+- Recognize provider changes.
+- Resume collection after application restarts.
+- Avoid duplicate counting.
+- Keep dashboard statistics updated.
+
+The tracker must not interfere with active Cline CLI sessions.
+
+## 4.7 Multiple Sessions and Model Switching
+
+The application must support:
+
+- Multiple Cline CLI sessions
+- Resumed sessions
+- Multiple models within a session
+- Multiple providers within a session
+- Interrupted sessions
+- Retried model requests
+- Concurrent sessions, where supported
+
+Each usage record must be attributed to the correct model and platform.
+
+## 4.8 Token Accuracy
+
+The application must prioritize accuracy over completeness.
+
+Requirements:
+
+- Prefer reported token counts.
+- Avoid duplicate usage.
+- Handle incomplete usage records.
+- Avoid double counting overlapping token categories.
+- Distinguish unavailable counts from zero.
+- Distinguish reported counts from estimated counts.
+- Handle partial and interrupted responses.
+- Avoid treating cumulative counters as individual requests.
+
+For the initial release, the main token categories are:
+
+- Input tokens
+- Output tokens
+- Combined total tokens
+
+The system must use a consistent token accounting definition across OpenCode and Cline CLI.
 
 ---
 
-## 4. Dashboard Requirements
+# 5. Unified Dashboard Requirements
 
-### 4.1 Overview
+The existing dashboard must support both OpenCode and Cline CLI.
 
-The main dashboard should display:
+## 5.1 Overview
+
+Display:
 
 | Metric | Description |
 |---|---|
-| Today's Tokens | Tokens consumed today |
-| Monthly Tokens | Tokens consumed during the current month |
-| Yearly Tokens | Tokens consumed during the current year |
-| All-Time Tokens | Total available historical token consumption |
+| Today's Tokens | Combined tokens consumed today |
+| Monthly Tokens | Combined tokens consumed this month |
+| Yearly Tokens | Combined tokens consumed this year |
+| All-Time Tokens | Combined historical token usage |
 
-### 4.2 Model Usage Breakdown
+## 5.2 Platform Breakdown
 
-Display model-wise token usage.
+Users must be able to view token consumption separately for:
 
-| Model | Provider | Input Tokens | Output Tokens | Total |
-|---|---|---:|---:|---:|
-| Claude Sonnet | Anthropic | 120,000 | 30,000 | 150,000 |
-| GPT | OpenAI | 90,000 | 20,000 | 110,000 |
-| Gemini | Google | 70,000 | 15,000 | 85,000 |
+- OpenCode
+- Cline CLI
 
-*The values above are illustrative.*
+The dashboard must also show combined usage across both platforms.
 
-### 4.3 Usage Visualizations
+## 5.3 Model Breakdown
+
+Display:
+
+- Platform
+- Provider
+- Model
+- Input tokens
+- Output tokens
+- Total tokens
+- Recorded request count
+
+The dashboard must distinguish identical model names used through different providers.
+
+## 5.4 Visualizations
 
 The dashboard should provide:
 
 - Daily token usage chart
 - Monthly token usage chart
 - Yearly token usage chart
-- Model-wise token usage comparison
-- Input versus output token comparison
+- Platform usage comparison
+- Model usage comparison
+- Input versus output token breakdown
 
-### 4.4 Filtering
+## 5.5 Filters
 
-Users should be able to filter usage by:
+Users must be able to filter statistics by:
 
-- Date range
-- Model
+- Platform
 - Provider
+- Model
+- Date range
 
-### 4.5 Tracking Status
+Filters should work consistently across all supported platforms.
 
-The dashboard should indicate:
+## 5.6 Integration Status
 
-- Whether OpenCode is detected
-- Whether usage tracking is active
-- Last successful data update
-- Whether usage records are incomplete or unavailable
+The dashboard must show:
 
----
-
-## 5. Data Accuracy Requirements
-
-Accurate token counting is a core requirement.
-
-The application should:
-
-- Prefer actual usage information reported by OpenCode.
-- Avoid counting the same usage multiple times.
-- Handle sessions containing multiple models.
-- Distinguish missing usage from zero usage.
-- Handle incomplete sessions and interrupted requests.
-- Avoid double counting overlapping token categories.
-- Distinguish reported token counts from estimated counts.
-- Clearly communicate limitations in the available usage data.
-
-The initial focus is input tokens, output tokens, and their combined total.
-
-Additional token categories may be supported in the future.
+- OpenCode integration status
+- Cline CLI integration status
+- Last successful data collection
+- Whether historical records are available
+- Whether usage data is incomplete
+- Any collection errors
 
 ---
 
-## 6. Privacy and User Experience
+# 6. Data Persistence Requirements
 
-The application should:
+The application must maintain its own local usage history.
+
+Requirements:
+
+- Preserve imported token records.
+- Avoid duplicate counting.
+- Support historical usage queries.
+- Preserve data after source sessions are deleted.
+- Support continued collection after application restarts.
+- Keep usage from different platforms distinguishable.
+- Maintain consistent model and provider identifiers.
+- Support future platform integrations without losing existing records.
+
+The application must not modify the original OpenCode or Cline CLI session data.
+
+---
+
+# 7. Privacy and Security Requirements
+
+The application must:
 
 - Operate locally by default.
-- Access only the information necessary for usage tracking.
-- Avoid collecting prompts, responses, or source code.
-- Never request or store model-provider API keys.
-- Avoid modifying OpenCode session data.
-- Require minimal setup.
-- Work without disrupting OpenCode.
-- Provide clear error messages when usage information cannot be collected.
+- Never require users to provide model-provider API keys.
+- Never collect or store provider credentials.
+- Avoid collecting prompts and model responses.
+- Avoid collecting source code.
+- Access only information necessary for token usage tracking.
+- Avoid modifying coding assistant configuration.
+- Avoid intercepting model API traffic.
+- Avoid disrupting normal coding assistant operations.
+
+The tracker must remain independent of the user's existing provider authentication.
 
 ---
 
-## 7. Out of Scope
+# 8. Out of Scope
 
-The following features are not included in the initial version:
+The following features are excluded from the current Cline CLI integration:
 
-- Cache hit and cache miss tracking
-- Cache read and cache write analytics
-- Token cost calculations
-- API billing information
-- Subscription quota monitoring
-- Rate-limit tracking
+- Cache hit and cache miss analytics
+- Cache read and cache write token breakdowns
+- API cost calculations
+- Provider billing information
+- Subscription quota tracking
+- Rate-limit monitoring
 - Cloud synchronization
-- Multi-user and team analytics
-- AI model performance comparisons
-- Integration with coding assistants other than OpenCode
+- Team analytics
+- Prompt analysis
+- Source code analysis
+- Additional coding assistant integrations
 
-These may be considered in future versions.
-
----
-
-## 8. Future Expansion
-
-The project should eventually support other AI coding platforms, such as:
-
-- Codex CLI
-- Claude Code
-- Cline CLI
-- Antigravity
-- FreeBuff
-
-The long-term objective is to create a unified token usage tracking platform where users can compare token consumption across multiple coding assistants and models.
-
-However, **no additional platform integrations are part of the current scope**.
+These features may be added in future releases.
 
 ---
 
-## 9. Success Criteria
+# 9. Cline CLI Success Criteria
 
-The OpenCode Token Usage Tracker will be considered successful when:
+The Cline CLI integration is considered complete when:
 
-- [ ] It detects an existing OpenCode installation.
-- [ ] It collects available token usage automatically.
-- [ ] It tracks usage across different model providers.
-- [ ] It supports free and paid models.
-- [ ] It displays total token consumption.
-- [ ] It displays daily token consumption.
-- [ ] It displays monthly token consumption.
-- [ ] It displays yearly token consumption.
-- [ ] It displays token usage separately for each model.
-- [ ] It imports available historical usage.
-- [ ] It preserves collected history.
-- [ ] It prevents duplicate counting.
-- [ ] It operates without API keys or changes to OpenCode configuration.
-- [ ] It clearly indicates incomplete or unavailable token data.
-- [ ] It provides a functional and easy-to-use dashboard.
+- [ ] Cline CLI is automatically detected.
+- [ ] Available historical usage is imported.
+- [ ] New usage is collected automatically.
+- [ ] Input tokens are tracked.
+- [ ] Output tokens are tracked.
+- [ ] Total tokens are calculated accurately.
+- [ ] Daily usage statistics are available.
+- [ ] Monthly usage statistics are available.
+- [ ] Yearly usage statistics are available.
+- [ ] Model-wise usage statistics are available.
+- [ ] Provider-wise identification works.
+- [ ] Free and paid models are supported wherever usage metadata exists.
+- [ ] Multiple sessions are handled correctly.
+- [ ] Model switching is handled correctly.
+- [ ] Duplicate usage is prevented.
+- [ ] Historical data is preserved.
+- [ ] No API keys are required.
+- [ ] Cline CLI configuration remains unchanged.
+- [ ] Existing OpenCode tracking continues working.
+- [ ] Combined OpenCode and Cline CLI statistics are accurate.
+- [ ] Missing or incomplete usage is clearly indicated.
 
 ---
 
-## 10. Project Goal
+# 10. Project Completion Status
 
-Develop a reliable, lightweight, privacy-focused application that allows developers to understand **how many tokens they consume through OpenCode, when they consume them, and which AI models consume them**.
+## OpenCode
 
-The application should provide accurate and accessible token usage statistics without interfering with the user's existing OpenCode workflow.
+**Status: DONE**
 
-This OpenCode-focused version will form the foundation for a future all-in-one AI coding token usage tracker.
+Marked completed for this project.
+
+## Cline CLI
+
+**Status: IN PROGRESS**
+
+Current development target.
+
+## Other Platforms
+
+**Status: PLANNED**
+
+Not included in the current development scope.
+
+---
+
+# 11. Final Project Goal
+
+Create a unified, privacy-first AI coding token usage tracking platform that automatically monitors token consumption across multiple coding assistants.
+
+The current release must support:
+
+1. OpenCode — completed integration.
+2. Cline CLI — current integration.
+
+Users should be able to understand:
+
+- How many tokens they consume overall.
+- How many tokens they consume daily, monthly, and yearly.
+- How many tokens each AI coding platform consumes.
+- How many tokens each model consumes within each platform.
+
+**The immediate goal is to complete Cline CLI integration without disrupting the existing OpenCode integration.**
