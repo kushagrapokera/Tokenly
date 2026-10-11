@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     # costs a few redundant upserts and recovers usage that landed after the last scan.
     rescan_overlap_ms: int = 300_000
 
+    # Whether the server collects on its own. Startup imports whatever history already
+    # exists; the interval keeps the dashboard current while the user works. Turning
+    # this off leaves collection to the manual rescan endpoint only.
+    sync_enabled: bool = True
+    sync_interval_seconds: float = 300.0
+
     @property
     def database_url(self) -> str:
         """SQLAlchemy URL pointing at this settings' SQLite file."""

@@ -54,6 +54,7 @@ def test_the_allowed_origins_are_configurable(tmp_path_factory: pytest.TempPathF
         database_path=tmp_path_factory.mktemp("db") / "custom.db",
         cors_allow_origins=["http://localhost:4173"],
         log_level="WARNING",
+        sync_enabled=False,
     )
 
     with TestClient(create_app(settings)) as custom_client:
