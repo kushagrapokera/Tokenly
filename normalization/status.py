@@ -7,7 +7,6 @@ as something the provider reported.
 """
 
 import logging
-from collections.abc import Mapping
 
 from normalization.totals import TokenCategories
 from schemas.usage import UsageStatus
@@ -28,9 +27,3 @@ def resolve_usage_status(categories: TokenCategories, estimated: bool = False) -
         logger.debug("record carries an estimated token count")
         return "estimated"
     return "reported"
-
-
-def raw_token_mapping(raw_usage: Mapping[str, object]) -> Mapping[str, object]:
-    """Return the token mapping from a record's preserved raw usage."""
-    tokens = raw_usage.get("tokens")
-    return tokens if isinstance(tokens, Mapping) else {}

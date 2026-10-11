@@ -145,11 +145,6 @@ class ScenarioEnvironment:
                 ),
             )
 
-    def delete_message(self, message_id: str) -> None:
-        """Remove a message from the source, as compaction or cleanup does."""
-        with sqlite3.connect(self.source_path) as connection:
-            connection.execute("DELETE FROM message WHERE id = ?", (message_id,))
-
     def compact_session(self, session_id: str) -> None:
         """Empty an entire session from the source."""
         with sqlite3.connect(self.source_path) as connection:

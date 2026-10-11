@@ -35,3 +35,14 @@ def test_health_returns_service_unavailable_when_database_is_unreachable(
 
     assert response.status_code == 503
     assert response.json()["detail"] == "database unavailable"
+
+
+def test_health_failure_body_names_the_error_type(tmp_path: Path) -> None:
+    # Every error the API returns names its type, so a client can tell a dead
+    # database from a bad request without reading the prose.
+    settings = Settings(database_path=tmp_path, log_level="WARNING")
+
+    with TestClient(create_app(settings)) as unreachable_client:
+        body = unreachable_client.get("/api/health").json()
+
+    assert body["error"] == "ServiceUnavailableError"

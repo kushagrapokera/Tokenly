@@ -17,9 +17,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from database.connection import Base
 from database.types import UtcDateTime
 
-USAGE_STATUS_VALUES = ("reported", "estimated", "unavailable")
-COLLECTOR_STATUS_VALUES = ("idle", "scanning", "error")
-
 
 def utc_now() -> datetime:
     """Return the current time as an aware UTC datetime."""

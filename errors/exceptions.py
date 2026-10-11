@@ -5,10 +5,6 @@ class TokenlyError(Exception):
     """Base class for every error Tokenly raises on purpose."""
 
 
-class ConfigurationError(TokenlyError):
-    """Raised when application settings are missing or invalid."""
-
-
 class DatabaseUnavailableError(TokenlyError):
     """Raised when the SQLite database cannot be reached or queried."""
 
@@ -85,13 +81,6 @@ class ApiError(TokenlyError):
         super().__init__(detail)
         self.status_code = status_code
         self.detail = detail
-
-
-class RequestValidationError(ApiError):
-    """Raised when request parameters are missing, malformed, or contradictory."""
-
-    def __init__(self, detail: str) -> None:
-        super().__init__(400, detail)
 
 
 class NotFoundError(ApiError):

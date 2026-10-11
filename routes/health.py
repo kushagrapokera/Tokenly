@@ -4,11 +4,11 @@ import logging
 from collections.abc import Iterator
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from database.connection import ping_database
-from errors.exceptions import DatabaseUnavailableError
+from errors.exceptions import DatabaseUnavailableError, ServiceUnavailableError
 from schemas.health import HealthResponse
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ def read_health(
     try:
         ping_database(session, settings.database_url)
     except DatabaseUnavailableError:
-        raise HTTPException(status_code=503, detail="database unavailable") from None
+        raise ServiceUnavailableError("database unavailable") from None
     return HealthResponse(
         status="ok",
         app=settings.app_name,
