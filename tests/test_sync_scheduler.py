@@ -113,7 +113,12 @@ def test_the_scheduler_repeats_on_its_interval(
     async def run_briefly() -> None:
         stop = asyncio.Event()
         task = asyncio.create_task(scheduler.run_periodically(stop))
-        await asyncio.sleep(0.05)
+        # Wait for the second scan rather than assuming a fixed sleep is long enough:
+        # under a loaded machine this test ran in a suite, and 50 ms was not always
+        # enough for a 10 ms interval to come round again.
+        deadline = time.monotonic() + 5.0
+        while collector.scans < 2 and time.monotonic() < deadline:
+            await asyncio.sleep(0.005)
         stop.set()
         await task
 
