@@ -13,6 +13,8 @@ and Cline stores; anything projected is labelled as such.
 never shared. Several decisions below are only sound because of that, so those
 assumptions are written down explicitly in §10 rather than left implicit.
 
+**The reasoning behind this document is summarised in [`LESSONS.md`](LESSONS.md).**
+
 ---
 
 ## 1. What is actually slow (measured)
