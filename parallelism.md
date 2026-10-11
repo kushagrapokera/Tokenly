@@ -1,7 +1,7 @@
 # Parallelism.md — making collection fast, and keeping it fast as platforms are added
 
-**Status:** A0 is implemented and measured (see §1 and §13). A1–A3 and all of
-phase B are still plan.
+**Status:** A0–A3 are implemented and measured (see §1 and §13). All of phase B
+is still plan, and is gated on re-measuring first.
 
 **Scope:** how collection and storage of usage records gets faster today, and how
 the same design keeps working when Claude, Codex, Antigravity and others are
@@ -25,7 +25,7 @@ what the plan was written against; "now" is measured after A0.
 |---|---:|---:|---|
 | **OpenCode `collect_history()`** | **836 ms** | **276 ms** | |
 | ↳ `opencode debug paths` subprocess | ~597 ms | **0 ms** | paid once per collector, not per scan |
-| ↳ snapshot copy of the live database | ~172 ms | ~172 ms | still every scan — this is A2 |
+| ↳ snapshot copy of the live database | ~172 ms | **0 ms** when unchanged | A2 reuses the copy; still copied when the source changes |
 | ↳ indexed SQL query | 11 ms | 11 ms | `message_session_time_created_id_idx` already exists |
 | ↳ row decode + model construction | ~40 ms | ~40 ms | *variable* — the only part batching could touch |
 | ↳ `json.loads` | ~11 ms | ~11 ms | 29 sessions, median 0.1 ms each |
@@ -33,9 +33,10 @@ what the plan was written against; "now" is measured after A0.
 | ↳ read + `json.loads` of 42 session files | ~100 ms | ~100 ms | *variable* — 42 independent files |
 | ↳ normalize in Python | ~33 ms | ~33 ms | |
 | **Sequential total** | **948 ms** | **~420 ms** | |
-| Write: first import, 2,142 rows | 174 ms | 174 ms | one transaction |
-| Write: re-import, 2,142 existing rows | **1,125 ms** | **1,125 ms** | one `UPDATE` per row — this is A1 |
-| Dashboard `summary` / `breakdown` / `timeline` | 1.3 / 2.4 / 43 ms | 1.3 / 2.4 / 43 ms | |
+| Write: first import, 2,142 rows | 174 ms | **~40 ms** | one batched transaction (A1) |
+| Write: re-import, 2,142 existing rows | **1,125 ms** | **71 ms** | one `UPDATE` per row → one batched upsert (A1) |
+| Dashboard `summary` / `breakdown` | 1.3 / 2.4 ms | 1.3 / 2.4 ms | |
+| Dashboard `timeline` (daily, 365 buckets) | 43 ms | **8.2 ms** | A3 replaced a linear edge scan with a binary search |
 
 **Fixed versus variable — the distinction the whole plan turns on** (before A0):
 
@@ -429,13 +430,46 @@ any of them.
 | # | Change | Expected | Risk |
 |---|---|---|---|
 | **A0** | ~~Cache the resolved OpenCode data directory instead of re-running `opencode debug paths` per scan~~ | **done — 836 → 276 ms** | See the rules below |
-| A1 | Replace the per-row `UPDATE` loop with one bulk `INSERT … ON CONFLICT DO UPDATE` | 1,125 → ~60 ms | Needs SQLite ≥ 3.24 (2018). Must preserve `UpsertResult` counts. |
-| A2 | Skip the snapshot when the live DB is unchanged (`mtime`, `size`) | −172 ms per no-change scan | A stale snapshot must never skip new messages; the timestamp checkpoint makes this safe, and needs a test proving it. |
-| A3 | Timeline: select columns instead of ORM entities | 43 → ~8 ms | Low |
+| A1 | ~~Replace the per-row `UPDATE` loop with one bulk `INSERT … ON CONFLICT DO UPDATE`~~ | **done — 1,125 → 71 ms** | `UpsertResult` counts preserved; old SQLite keeps a correct row-at-a-time path |
+| A2 | ~~Skip the snapshot when the live DB is unchanged~~ | **done — status view 194 → 7 ms** | Fingerprint must include the write-ahead log, or new usage is missed |
+| A3 | ~~Timeline: find each row's bucket without a linear scan~~ | **done — 43 → 8.2 ms** | Must return identical buckets, especially across DST |
 
-**A2 is worth doing on its own merits**, independent of any parallelism. It
-attacks a *fixed* per-scan cost in the sequential world (§1), where batching
-cannot reach it at all.
+#### A1 — what it does, and the SQLite question
+
+The whole batch now goes out as one `INSERT … ON CONFLICT DO UPDATE`, with
+`excluded` supplying the updated values so the same statement covers both an insert
+and a refresh. SQLAlchemy splits it into `executemany` batches internally, so a
+re-import of 2,142 records is one logical statement instead of 2,142 of them.
+
+*Answering §17's question:* `ON CONFLICT DO UPDATE` needs SQLite ≥ 3.24 (2018).
+Everything Python 3.10+ ships with satisfies it — this machine has 3.53.2 — but a
+locally built interpreter can be linked against an older library, so the batched
+write is guarded by a version check and the row-at-a-time path remains as a
+correct fallback. It is tested for identical behaviour, not merely present.
+
+`UpsertResult` still reports what it did. The inserted/updated split comes from
+the same single indexed SELECT that already existed; one cheap query costs far
+less than the write it precedes.
+
+#### A2 — reusing the copy, and the trap in it
+
+Implemented as `SnapshotCache`. A copy is reused while the source looks exactly as
+it did when it was taken. Measured on the live store: `/api/collector/status`
+went from 194 ms to **7 ms**, with a cache hit on every one of five scans spaced
+1.5 s apart while idle.
+
+**The trap:** OpenCode runs in WAL mode, so new messages are committed to
+`opencode.db-wal` and can leave the main file's size and modification time
+completely unchanged. Fingerprinting the main file alone — the obvious
+implementation — reuses a copy that is missing the very usage it was asked to
+find. The fingerprint therefore covers the write-ahead log as well, while
+excluding `-shm`, whose timestamp moves without any data changing. Verified on
+this machine: the `-wal` file really is present.
+
+If the fingerprint ever lies, the failure is bounded. The reused copy is simply
+older, so the scan finds nothing new, and the scan after it copies again and
+catches up. **Usage is delayed, never skipped**, because the checkpoint only
+ever advances over timestamps a scan actually read.
 
 #### A0 — the rules, and why each one
 
@@ -467,9 +501,25 @@ it holds because the app runs locally.
 **Scope note:** this affects `discover()` too, which costs ~583 ms for the same
 reason and is on the path of every `GET /api/collector/status`.
 
-**A3 trap, flagged now:** the tempting fix — pushing bucketing into SQL with a
-timezone offset — is wrong across DST, where day lengths in UTC are not uniform.
-Do the safe tuple-based fix; treat SQL bucketing as a separate decision.
+#### A3 — what the cost actually was
+
+This item was misdiagnosed when the plan was written. It assumed the timeline was
+slow because it fetched ORM entities; it already selected plain columns. Profiling
+showed the real cost: `_bucket_index` scanned the bucket edges **linearly, once per
+row**. A day timeline over a year has ~280 edges, so the same 2,142 rows cost 45 ms
+bucketed by day against 7 ms by month — the difference was the edge count, not the
+data.
+
+It is now a binary search over the same sorted edges: **43 ms → 8.2 ms**, with month
+and year unchanged. `tests/test_timeline_bucketing.py` checks the fast
+implementation against the original linear one for every edge, every boundary, both
+ends of the range, and four timezones across a daylight-saving transition — where a
+local day is not 24 hours long, and any fix that assumed evenly spaced UTC edges
+would quietly misbucket.
+
+**Still avoided:** pushing bucketing into SQL with a timezone offset. Across a DST
+transition, day lengths in UTC are not uniform, so a fixed offset would produce
+plausible, wrong numbers. The edge search stays exact.
 
 Also measure `orjson` as a drop-in for the ~200 ms of JSON parsing, but do not
 adopt it without a measurement.
@@ -496,10 +546,11 @@ single-file SQLite source. The trigger to revisit is *a future platform with one
 large database where measurement shows sharding helps* — and expect both to be
 needed together when that day comes (§4.3).
 
-**Gate between A and B.** After A, re-run the benchmark. If collection is already
-comfortably fast for real usage, stop — phase B is insurance against growth, not
-a fix for a problem felt today. It should be built only if the numbers justify
-it.
+**Gate between A and B — now due.** Phase A is complete. Re-run the benchmark
+before starting B. On today's numbers B would apply to Cline alone, for ~31% of a
+144 ms collection step (~59 ms), while a full pass is already down to ~250 ms. The
+honest read is that B is insurance against growth rather than a fix for anything
+felt now, and it should be built only if the measurements still call for it.
 
 ---
 
@@ -555,6 +606,7 @@ Projections, to be measured in A0/A1 and confirmed in B6.
 | Full rescan (writes dominate) | ~1.1 s | ~0.15 s | ~0.15 s |
 | Steady-state scan | 103 ms | ~50 ms | ~40 ms |
 | Timeline query | 43 ms | ~8 ms | ~8 ms |
+| Collector status view | 759 ms | ~7 ms | ~7 ms |
 
 ### Cost per scan — the number that actually matters here
 
@@ -569,7 +621,11 @@ are minutes stale is not doing its job.
 | OpenCode, fixed cost | ~769 ms | ~0 ms | ~0 ms |
 | OpenCode, variable | ~51 ms | ~51 ms | ~51 ms |
 | Cline | ~144 ms | ~144 ms | ~85 ms |
+| Write cost, re-import | ~1,125 ms | ~71 ms | ~71 ms |
+| Status view (`GET /api/collector/status`) | 759 ms | ~7 ms | ~7 ms |
+| Daily timeline query | 43 ms | ~8 ms | ~8 ms |
 | **Cost of one full scan** | **~948 ms** | **~250 ms** | **~200 ms** |
+| Status view, idle | 759 ms | ~7 ms | ~7 ms |
 | Interval affordable at the same background cost | 5 min | ~1 min | ~30 s |
 | Share of one core, continuously | 0.3% | 0.08% | 0.07% |
 

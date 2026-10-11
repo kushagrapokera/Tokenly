@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from collectors.opencode import OpenCodeCollector
+from database import repository
 from database.connection import Base
 from database.models import CollectorState, UsageEvent
 from database.repository import (
@@ -213,6 +214,53 @@ def test_a_mixed_batch_inserts_new_and_updates_existing(session: Session) -> Non
 
     assert (result.inserted, result.updated) == (1, 1)
     assert count_usage_events(session) == 2
+
+
+def test_the_batch_is_written_as_one_statement(
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Re-importing history used to cost one UPDATE per row: 1,125 ms for 2,142
+    # records. The batch must go out as a single statement, or a future change
+    # could quietly put that loop back.
+    statements: list[str] = []
+
+    @event.listens_for(session.get_bind(), "before_cursor_execute")
+    def _record(conn, cursor, statement, parameters, context, executemany):  # type: ignore[no-untyped-def]
+        statements.append(statement)
+
+    upsert_usage_records(session, [make_record(f"msg_{index}") for index in range(50)])
+
+    inserts = [s for s in statements if s.lstrip().upper().startswith("INSERT")]
+    assert len(inserts) == 1
+
+
+def test_the_row_at_a_time_fallback_behaves_identically(
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # SQLite older than 3.24 cannot batch this. The slow path must still be correct,
+    # not merely present: same counts, same rows, and the import time still preserved.
+    monkeypatch.setattr(repository, "BULK_UPSERT_SUPPORTED", False)
+    first_import = datetime(2026, 10, 5, 9, 0, tzinfo=UTC)
+
+    inserted = upsert_usage_records(
+        session,
+        [make_record("msg_1"), make_record("msg_2")],
+        now=first_import,
+    )
+    updated = upsert_usage_records(
+        session,
+        [make_record("msg_1", input_tokens=250), make_record("msg_2"), make_record("msg_3")],
+        now=datetime(2026, 10, 6, 9, 0, tzinfo=UTC),
+    )
+
+    assert (inserted.inserted, inserted.updated) == (2, 0)
+    assert (updated.inserted, updated.updated) == (1, 2)
+    assert count_usage_events(session) == 3
+    stored = query_usage_events(session)[0]
+    assert stored.input_tokens == 250
+    assert stored.created_at == first_import
 
 
 def test_an_empty_batch_is_a_no_op(session: Session) -> None:

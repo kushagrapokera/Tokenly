@@ -29,7 +29,7 @@ from collectors.opencode.reader import (
     list_sessions,
     open_snapshot,
 )
-from collectors.opencode.snapshot import snapshot_database
+from collectors.opencode.snapshot import SnapshotCache
 from config.settings import Settings, get_settings
 from errors.exceptions import CollectorError
 from schemas.usage import DiscoveryResult, UsageRecord
@@ -54,6 +54,9 @@ class OpenCodeCollector(BaseCollector):
         # Long-lived, so the data directory is resolved once rather than re-asked
         # from the CLI on every scan (~600 ms each time).
         self._resolver = DataDirectoryResolver(self._settings)
+        # Reused between scans while the database is unchanged, which avoids copying
+        # the whole file (~172 ms) on every pass.
+        self._snapshots = SnapshotCache()
 
     @property
     def platform(self) -> str:
@@ -62,6 +65,7 @@ class OpenCodeCollector(BaseCollector):
     def refresh(self) -> None:
         """Discard cached source discovery so the next scan asks OpenCode again."""
         self._resolver.invalidate()
+        self._snapshots.close()
 
     def discover(self) -> DiscoveryResult:
         """Report whether OpenCode data is readable here; never raise for 'not installed'."""
@@ -149,7 +153,7 @@ class OpenCodeCollector(BaseCollector):
     @contextmanager
     def _snapshot_connection(self, database_path: Path) -> Iterator[sqlite3.Connection]:
         """Yield a verified read-only connection to a private copy of the database."""
-        with snapshot_database(database_path) as snapshot_path:
+        with self._snapshots.snapshot(database_path) as snapshot_path:
             connection = open_snapshot(snapshot_path)
             try:
                 yield connection

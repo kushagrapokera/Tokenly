@@ -388,7 +388,7 @@ what makes them deterministic.
 
 ## 12. Phase 9 — Collection Performance
 
-**Status: A0 done.** The design, the measurements behind it, and the rollout
+**Status: A0–A3 done.** The design, the measurements behind it, and the rollout
 order are in [`parallelism.md`](parallelism.md).
 
 Scope in one line: make a collection pass cheap enough that the sync interval can
@@ -399,9 +399,20 @@ drop from five minutes to about one, without changing what is stored.
   now resolved once per collector and reused. Measured: an OpenCode scan went
   from **900 ms to 276 ms**, and the collector status endpoint from 759 ms to
   194 ms.
-- **A1** — replace the per-row `UPDATE` loop with one bulk upsert (1,125 ms).
-- **A2** — skip the snapshot when the source database has not changed (172 ms).
-- **A3** — read the timeline's columns instead of ORM entities (43 → ~8 ms).
+- **A1 — done.** Re-importing history issued one `UPDATE` per row, costing
+  1,125 ms for 2,142 records. The whole batch now goes out as a single
+  `INSERT … ON CONFLICT DO UPDATE`, measured at **71 ms** — a sixteen-fold
+  improvement on the path a manual rescan pays every time.
+- **A2 — done.** Every scan copied OpenCode's whole database before reading it
+  (~172 ms). The copy is now reused while the source is unchanged: the tracking
+  status view went from **194 ms to 7 ms**. The fingerprint includes the
+  write-ahead log, because OpenCode runs in WAL mode and new usage lands there
+  while the main file looks untouched — ignoring that would reuse a copy missing
+  the very records it was asked to find.
+- **A3 — done.** The daily timeline took 43 ms because finding a row's bucket
+  scanned every bucket edge from the start, once per row. A binary search over the
+  same edges brought it to **8.2 ms**, with buckets identical before and after,
+  including across daylight-saving transitions.
 - **Phase B** — parallel collection across Cline's batches, last, and only if the
   measurements still justify it after the above.
 
