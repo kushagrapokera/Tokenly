@@ -50,7 +50,6 @@ def assistant_record(
         payload[key] = value
     return AssistantRecord(
         session_id=session_id,
-        project_directory="-home-tester",
         message_id=message_payload["id"],
         model_id=message_payload.get("model"),
         timestamp=datetime.fromisoformat(TIMESTAMP.replace("Z", "+00:00")),
@@ -122,7 +121,6 @@ def test_thinking_tokens_never_inflate_output(claude_store: ClaudeStoreBuilder) 
 
     assistant = AssistantRecord(
         session_id="ses",
-        project_directory="proj",
         message_id="m1",
         model_id="claude-opus-4",
         timestamp=assistant_record(claude_store).timestamp,
@@ -146,7 +144,6 @@ def test_a_missing_usage_object_is_unavailable(claude_store: ClaudeStoreBuilder)
 
     assistant = AssistantRecord(
         session_id="ses",
-        project_directory="proj",
         message_id="m1",
         model_id="claude-sonnet-4-5",
         timestamp=datetime(2026, 9, 22, 11, 52, 31, tzinfo=timezone.utc),
@@ -198,7 +195,6 @@ def test_a_prefixed_model_names_its_gateway(claude_store: ClaudeStoreBuilder) ->
 
     assistant = AssistantRecord(
         session_id="ses",
-        project_directory="proj",
         message_id="m2",
         model_id="openrouter/deepseek/deepseek-chat",
         timestamp=datetime(2026, 9, 22, 12, 0, tzinfo=timezone.utc),
@@ -236,7 +232,6 @@ def test_a_missing_model_is_reported_under_the_unknown_model(
 
     assistant = AssistantRecord(
         session_id="ses",
-        project_directory="proj",
         message_id="m3",
         model_id=None,
         timestamp=datetime(2026, 9, 22, 12, 0, tzinfo=timezone.utc),

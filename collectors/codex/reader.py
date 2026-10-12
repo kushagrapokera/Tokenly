@@ -57,8 +57,7 @@ class RolloutFile:
 class CodexUsageEvent:
     """One per-call usage record, already joined to its model and provider.
 
-    `usage` is the per-call object exactly as written (the six Codex fields);
-    `raw_payload` is the whole `token_usage_record` payload for provenance.
+    `usage` is the per-call object exactly as written (the six Codex fields).
     `model_id` / `provider_id` are None when the join could not be made, which the
     extractor records under the `unknown` bucket.
     """
@@ -70,7 +69,6 @@ class CodexUsageEvent:
     model_id: str | None
     provider_id: str | None
     usage: dict[str, Any] = field(default_factory=dict)
-    raw_payload: dict[str, Any] = field(default_factory=dict)
     cli_version: str | None = None
 
 
@@ -202,7 +200,6 @@ def _to_usage_event(
         model_id=model_by_turn.get(turn_id),
         provider_id=provider_id,
         usage=usage if isinstance(usage, dict) else {},
-        raw_payload=payload,
         cli_version=cli_version,
     )
 

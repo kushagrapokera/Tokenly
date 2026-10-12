@@ -13,7 +13,7 @@ myusage = "cli.myusage:main"
 
 [tool.setuptools.packages.find]
 include = ["cli*", "collectors*", "aggregation*", "config*", "database*", "errors*", "logging_setup*", "normalization*", "routes*", "schemas*", "sync*"]
-exclude = ["tests*", "frontend*", "skills*", "scripts*"]
+exclude = ["tests*", "skills*", "scripts*"]
 
 [tool.ruff]
 line-length = 100

@@ -21,7 +21,6 @@ class SyncResult:
     checkpoint: str | None
     started_at: datetime
     finished_at: datetime
-    source_path: str = ""
     failed: bool = False
     error_message: str = ""
 

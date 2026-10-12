@@ -11,7 +11,7 @@ versions); their *shapes* are those vendors' documented model-ID formats
 import pytest
 
 from collectors.claude.extractor import extract_usage_record, infer_provider_id
-from collectors.claude.providers import (
+from normalization.providers import (
     ANTHROPIC,
     BEDROCK,
     DEEPSEEK,
@@ -20,9 +20,9 @@ from collectors.claude.providers import (
     OLLAMA,
     OPENAI,
     OPENROUTER,
-    UNKNOWN_PROVIDER,
     VERTEX,
 )
+from normalization.providers import UNKNOWN as UNKNOWN_PROVIDER
 from tests.collectors.claude.conftest import ClaudeStoreBuilder
 
 # Explicit prefix rules -------------------------------------------

@@ -53,7 +53,6 @@ def usage_event(
         model_id=model_id,
         provider_id=provider_id,
         usage=usage,
-        raw_payload={"response_id": response_id},
         cli_version="0.155.1",
     )
 

@@ -100,7 +100,6 @@ class SyncService:
                 checkpoint=previous_checkpoint,
                 started_at=started_at,
                 finished_at=self._clock(),
-                source_path=source_path,
                 failed=True,
                 error_message=str(error),
             )
@@ -132,7 +131,6 @@ class SyncService:
             checkpoint=checkpoint,
             started_at=started_at,
             finished_at=self._clock(),
-            source_path=source_path,
         )
 
     def _warn_if_interrupted(self, platform: str, progress: CollectorProgress | None) -> None:

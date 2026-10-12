@@ -53,23 +53,18 @@ def _all_time_range_builder(zone: str) -> TimeWindow:
     )
 
 
-def _custom_range_builder(zone: str) -> TimeWindow:
-    """Custom ranges need caller bounds, which this signature cannot carry.
-
-    `resolve_range` handles them directly; reaching this builder means a custom range
-    was requested without one, which is a request error rather than a server fault.
-    """
-    raise UnknownRangeError(RANGE_CUSTOM, RANGE_NAMES)
-
-
 @dataclass(frozen=True)
 class NamedRange:
-    """One range the API accepts, with the window builder that produces it."""
+    """One range the API accepts, with the window builder that produces it.
+
+    `build` is None exactly for a range whose window comes from caller-supplied bounds
+    rather than from the calendar. `resolve_range` handles that case directly, so there
+    is deliberately no builder to call and nothing falls through to a wrong window.
+    """
 
     name: str
-    build: WindowBuilder
+    build: WindowBuilder | None
     description: str
-    needs_bounds: bool = False
 
 
 NAMED_RANGES: tuple[NamedRange, ...] = (
@@ -104,9 +99,8 @@ NAMED_RANGES: tuple[NamedRange, ...] = (
     ),
     NamedRange(
         RANGE_CUSTOM,
-        _custom_range_builder,
+        None,
         "A caller-supplied start and end",
-        needs_bounds=True,
     ),
 )
 
@@ -137,7 +131,7 @@ def resolve_range(
     client sending stale bounds does not silently get a window it did not ask for.
     """
     named = find_range(range_name)
-    if named.needs_bounds:
+    if named.build is None:
         window = custom_window(start, end, timezone_name)
         logger.debug("resolved custom range to %s to %s", window.start, window.end)
         return window

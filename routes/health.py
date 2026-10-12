@@ -1,29 +1,17 @@
 """Health check endpoint."""
 
 import logging
-from collections.abc import Iterator
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Request
 
 from database.connection import ping_database
 from errors.exceptions import DatabaseUnavailableError, ServiceUnavailableError
+from routes.dependencies import SessionDependency
 from schemas.health import HealthResponse
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["health"])
-
-
-def get_session(request: Request) -> Iterator[Session]:
-    """Hand the route one database session per request, always closed afterwards."""
-    session_factory = request.app.state.session_factory
-    with session_factory() as session:
-        yield session
-
-
-SessionDependency = Annotated[Session, Depends(get_session)]
 
 
 @router.get("/api/health", response_model=HealthResponse)

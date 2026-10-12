@@ -48,7 +48,6 @@ class AssistantRecord:
     """One assistant line from a session transcript, already shaped."""
 
     session_id: str
-    project_directory: str
     message_id: str | None
     model_id: str | None
     timestamp: datetime | None
@@ -141,7 +140,6 @@ def _to_record(
     """Shape one decoded assistant line for the extractor."""
     return AssistantRecord(
         session_id=session_file.session_id,
-        project_directory=session_file.project_directory,
         message_id=_text_or_none(message.get("id")),
         model_id=_text_or_none(message.get("model")),
         timestamp=_read_timestamp(_text_or_none(payload.get("timestamp"))),

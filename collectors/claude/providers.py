@@ -1,7 +1,7 @@
 """Provider attribution for Claude Code usage.
 
 Phase 4's rules live here, stated once in the order the plan fixes them
-(`implementation.md` Phase 4 "Provider Detection Rules"):
+(`docs/implementation.md` Phase 4 "Provider Detection Rules"):
 
 1. **Prefer explicit provider metadata.** Claude Code records none in its
    assistant lines, so rule 1 usually passes to the rules below.
@@ -23,39 +23,16 @@ The returned identifiers are the tracker's stable provider ids; they join
 `(platform, provider_id, model_id)` in every breakdown.
 """
 
-from normalization.providers import (
-    ANTHROPIC,
-    BEDROCK,
-    DEEPSEEK,
-    GLM,
-    MOONSHOT,
-    OLLAMA,
-    OPENAI,
-    OPENROUTER,
-    VERTEX,
-)
+from normalization.providers import BEDROCK, GATEWAY_PREFIXES, VERTEX
 from normalization.providers import UNKNOWN as UNKNOWN_PROVIDER
 
-# The canonical provider ids above are shared with the Codex collector
-# (`normalization/providers.py`); Claude-specific prefix/id-shape inference lives
-# below and is not reused by Codex, which has first-class provider metadata.
+# The canonical provider ids and the gateway-prefix table are shared with the other
+# collectors (`normalization/providers.py`); Claude-specific prefix/id-shape inference
+# lives below and is not reused by Codex, which has first-class provider metadata.
 
 # Gateway prefixes: `provider/model` as the user typed it into their router
 # or model setting. Checked before the id-shape rules so an explicit
 # namespace wins over a coincidental shape match.
-PROVIDER_PREFIXES: tuple[tuple[str, str], ...] = (
-    ("openrouter/", OPENROUTER),
-    ("bedrock/", BEDROCK),
-    ("vertex/", VERTEX),
-    ("anthropic/", ANTHROPIC),
-    ("deepseek/", DEEPSEEK),
-    ("glm/", GLM),
-    ("zai/", GLM),
-    ("kimi/", MOONSHOT),
-    ("moonshot/", MOONSHOT),
-    ("openai/", OPENAI),
-    ("ollama/", OLLAMA),
-)
 
 # Documented Bedrock model-ID shapes: `anthropic.claude-...` and the regional
 # inference-profile forms `us.`, `eu.`, `apac.` + `anthropic.claude-...`
@@ -81,7 +58,7 @@ def infer_provider_id(model_id: str) -> str:
     """
     lowered = model_id.lower()
 
-    for prefix, provider in PROVIDER_PREFIXES:
+    for prefix, provider in GATEWAY_PREFIXES:
         if lowered.startswith(prefix):
             return provider
 
