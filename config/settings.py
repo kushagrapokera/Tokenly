@@ -23,12 +23,11 @@ class Settings(BaseSettings):
     database_path: Path = Path("data/tokenly.db")
     default_timezone: str = "UTC"
 
-    # The API is a local-only service; cross-origin access is limited to the local
-    # frontend dev servers so a page on another origin cannot read usage data.
-    cors_allow_origins: list[str] = [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ]
+    # The API is a local-only service and the dashboard is served by it from the same
+    # origin, so cross-origin access is denied by default. Setting this to a list of
+    # origins is only needed when a separate page (a static mockup, a dev server) has
+    # to read the API; leaving it empty means no other origin can read usage data.
+    cors_allow_origins: list[str] = []
     cors_allow_methods: list[str] = ["GET"]
     cors_allow_headers: list[str] = ["Content-Type"]
 
