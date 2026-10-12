@@ -61,5 +61,6 @@ the unit suite has no dependencies.
 
 ## Conventions
 
-Read [`AGENTS.md`](AGENTS.md) before changing anything. It holds the project rules
-and points at the performance notes in [`docs/`](docs/).
+The project rules live in `AGENTS.md`. It is kept on each machine rather than in the
+repo, so read your own copy before changing anything; it points at the performance notes
+in [`docs/`](docs/), which are shared.

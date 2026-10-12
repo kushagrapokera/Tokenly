@@ -15,18 +15,28 @@ Installed from
 
 ## Where they live
 
-The single source of truth is `.claude/skills/<name>/SKILL.md`. Every tool
-we use finds them there:
+The single source of truth is `skills/<name>/SKILL.md`. Every tool
+we use finds them there through a symlink:
 
 | Tool | Path it reads |
 |---|---|
-| Claude Code | `.claude/skills/` (native) |
+| Claude Code | `.claude/skills/` (symlink to `../skills`) |
 | opencode | `.claude/skills/` (Claude-compatible path) |
-| Cline | `.cline/skills/` (relative symlink to `.claude/skills`) |
-| Codex | `.agents/skills/` (relative symlink to `.claude/skills`) |
+| Cline | `.cline/skills/` (relative symlink to `../skills`) |
+| Codex | `.agents/skills/` (relative symlink to `../skills`) |
+
+The three symlinks are machine-local and are not tracked, so a fresh
+checkout needs them recreated before the tools find anything:
+
+```bash
+mkdir -p .claude .cline .agents
+ln -s ../skills .claude/skills
+ln -s ../skills .cline/skills
+ln -s ../skills .agents/skills
+```
 
 Cline also reads `.claude/skills/` directly, but `.cline/skills/` is its
-documented *recommended* path, so the installer exposes both and Cline finds
+documented *recommended* path, so both are exposed and Cline finds
 the skills whichever path its build scans.
 
 ## The Clean Code skills
@@ -110,7 +120,7 @@ the same as first install.
 
 ## Frontend vs shared scope (no backend/ move needed)
 
-All 31 skills live in ONE flat store (`.claude/skills/`). Nothing is
+All 31 skills live in ONE flat store (`skills/`). Nothing is
 renamed and no directories move — the tools tell the families apart
 from one scope sentence each installer appends to the description:
 
@@ -144,7 +154,7 @@ python scripts/install_ui_skills.py                    # refresh UI/UX design
 python scripts/install_ui_skills.py --check            # verify, change nothing
 ```
 
-Both installers **merge** into `.claude/skills/` — neither wipes the
+Both installers **merge** into `skills/` — neither wipes the
 other's skill families. `tests/test_skills_install.py`,
 `tests/test_ui_skills_install.py`, and `tests/test_skill_scopes.py`
 cover them.

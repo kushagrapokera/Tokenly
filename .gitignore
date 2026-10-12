@@ -6,3 +6,19 @@ venv/
 node_modules/
 data/
 *.egg-info/
+
+# Tool caches, all machine-local and all rebuildable.
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+cache/
+
+# Agent tooling wiring. Each is a single symlink into skills/, recreated per machine;
+# the skills themselves live in skills/ and are tracked.
+.agents/
+.claude/
+.cline/
+
+# The project rules, read by the coding tools from the working copy. Kept per machine
+# rather than shared, so they can differ without fighting over one committed copy.
+AGENTS.md
