@@ -1,0 +1,11 @@
+{
+  "name": "tokenly-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tests for the dependency-free dashboard in web/",
+  "scripts": {
+    "test": "node --test tests/web/",
+    "test:browser": "node tests/web/dashboard.browser.cjs"
+  },
+  "devDependencies": {}
+}

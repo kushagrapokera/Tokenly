@@ -25,6 +25,7 @@ from database.schema import ensure_schema
 from errors.handlers import register_error_handlers
 from logging_setup.configure import configure_logging
 from routes.collector import router as collector_router
+from routes.dashboard import router as dashboard_router
 from routes.health import router as health_router
 from routes.usage import router as usage_router
 from sync.coordinator import build_sync_coordinator
@@ -100,6 +101,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health_router)
     app.include_router(usage_router)
     app.include_router(collector_router)
+    app.include_router(dashboard_router)
 
     logger.info(
         "application ready; database at %s, cors origins %s",
