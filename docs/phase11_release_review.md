@@ -12,7 +12,7 @@ assessment and Definition-of-Done record required by `implementation.md` §11.
 | No duplicate deduplication engine | ✅ | Every platform upserts through `database.repository.upsert_usage_records` keyed on the shared unique `(platform, source_event_id)`. Each adapter only namespaces its own id (`{session}:{id}`). |
 | No duplicate database | ✅ | One `Base` / one `settings.database_path`; `data/tokenly.db`. No per-platform tables or DBs. |
 | No duplicate API layer | ✅ | One FastAPI app (`main.py`), one set of routes (`routes/`). Platforms are data, not endpoints; `PlatformQuery` is free-form. |
-| No duplicate dashboard | ✅ | One frontend (`frontend/`); platform/provider/model filters are derived from data. |
+| No duplicate dashboard | ✅ | One frontend (`web/`, dependency-free, served by `routes/dashboard.py`); platform/provider/model filters are derived from data. |
 | Existing utilities reused | ✅ | Locators, reader/extractor/collector adapter pattern, checkpointing, `SyncService`, coordinator, aggregation, and provider canonicalisation (`normalization/providers.py`) are all reused. |
 | Platform-specific logic isolated | ✅ | Each `collectors/<platform>/` package owns only its storage layout and field mapping (Clean Code ch08 boundary adapter). |
 | Shared changes backward-compatible | ✅ | New work was additive: `CODEX_RELATIONSHIPS`, `codex_home`, and a `claude_code`/`codex` label map. No existing signatures or behavior changed; OpenCode/Cline tests stayed green throughout. |

@@ -6,6 +6,11 @@ Codex CLI. Written before any production code.
 
 Baseline verification: `pytest` — **447 passed, 1 skipped** on the untouched tree.
 
+> **Historical.** This audit predates the dashboard rewrite. The `frontend/` React
+> app it inventories below has been replaced by the dependency-free `web/` bundle
+> served by `routes/dashboard.py`, so the frontend rows here no longer describe
+> current files. The collector rows remain accurate.
+
 ---
 
 ## 1. Existing reusable files
