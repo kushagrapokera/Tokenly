@@ -9,13 +9,15 @@ import argparse
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from aggregation.breakdown import ModelUsage
+from aggregation.summary import UsageSummary
 from cli import discovery, prompts, reports
 from collectors.registry import build_collectors
 from database.connection import create_database_engine, create_session_factory
 from database.schema import ensure_schema
 from sync.coordinator import build_sync_coordinator
 
-UI_URL = "http://localhost:5173"
+UI_URL = "http://127.0.0.1:8000"
 API_URL = "http://127.0.0.1:8000"
 
 
@@ -48,31 +50,41 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     engine = create_database_engine(settings.database_url, database_path=settings.database_path)
-    ensure_schema(engine)
-    session_factory = create_session_factory(engine)
+    try:
+        ensure_schema(engine)
+        session_factory = create_session_factory(engine)
 
-    if not args.no_sync:
-        _sync(settings, session_factory)
+        if not args.no_sync:
+            _sync(settings, session_factory)
 
-    _print_links()
-    if args.link:
+        _print_links()
+        if args.link:
+            return 0
+
+        _interactive(settings, session_factory)
         return 0
-
-    _interactive(settings, session_factory)
-    return 0
+    finally:
+        engine.dispose()
 
 
 def _sync(settings, session_factory: sessionmaker[Session]) -> None:
     """Run one sync pass over every available platform."""
     print("\nSyncing OpenCode, Cline, Claude Code, Codex ...")
-    coordinator = build_sync_coordinator(build_collectors(settings), settings)
-    for result in coordinator.run_all(session_factory):
-        if result.failed:
-            print(f"  {result.platform}: sync failed - {result.error_message}")
-        elif result.stored:
-            print(f"  {result.platform}: +{result.stored} record(s)")
-        else:
-            print(f"  {result.platform}: up to date")
+    collectors = build_collectors(settings)
+    try:
+        coordinator = build_sync_coordinator(collectors, settings)
+        for result in coordinator.run_all(session_factory):
+            if result.failed:
+                print(f"  {result.platform}: sync failed - {result.error_message}")
+            elif result.stored:
+                print(f"  {result.platform}: +{result.stored} record(s)")
+            else:
+                print(f"  {result.platform}: up to date")
+    finally:
+        # A collector may be holding a copy of its source database. The command is
+        # about to exit, so there is no reason to leave that copy on disk.
+        for collector in collectors:
+            collector.close()
 
 
 def _print_discovered(paths: discovery.DiscoveredPaths) -> None:
@@ -142,29 +154,51 @@ def _requests(count: int) -> str:
     return f"{count} request" + ("" if count == 1 else "s")
 
 
-def _print_summary_table(rows: list[tuple[str, object]]) -> None:
+def _percent(fraction: float | None) -> str:
+    """Render a rate as a percentage, or a dash when there is no data to divide by."""
+    return "-" if fraction is None else f"{fraction * 100:.1f}%"
+
+
+def _print_summary_table(rows: list[tuple[str, UsageSummary]]) -> None:
     header = (
         f"  {'Window':<12}{'Requests':>9}{'Input':>13}"
         f"{'Output':>11}{'Total':>15}{'Consumption':>15}"
     )
-    print(header)
+    cache_header = f"{'CacheRead':>15}{'Hit':>7}{'Miss':>7}{'Unk':>6}{'HitRate':>9}{'TokenHit':>10}"
+    print(header + cache_header)
     for label, summary in rows:
+        cache = summary.cache
         print(
             f"  {label:<12}{summary.request_count:>9}"
             f"{summary.input_tokens:>13,}{summary.output_tokens:>11,}"
             f"{summary.total_tokens:>15,}{summary.consumption_tokens:>15,}"
+            f"{cache.cache_read_tokens:>15,}"
+            f"{cache.cache_hit_requests:>7,}{cache.cache_miss_requests:>7,}"
+            f"{cache.cache_unknown_requests:>6,}"
+            f"{_percent(cache.request_hit_rate):>9}"
+            f"{_percent(cache.token_hit_rate):>10}"
         )
 
 
-def _print_provider_report(rows: list[tuple[str, list]]) -> None:
+def _print_provider_report(rows: list[tuple[str, list[ModelUsage]]]) -> None:
+    header = (
+        f"    {'model':<30}{'total_tokens':>15}{'cache_read':>15}"
+        f"{'hit':>7}{'miss':>7}{'HitRate':>9}{'TokenHit':>9}"
+    )
     for label, model_rows in rows:
         print(f"\n  {label}:")
         if not model_rows:
             print("    (no usage)")
             continue
+        print(header)
         for model in model_rows:
+            cache = model.cache
             print(
                 f"    {model.model_id:<30}{model.total_tokens:>15,}"
+                f"{cache.cache_read_tokens:>15,}"
+                f"{cache.cache_hit_requests:>7,}{cache.cache_miss_requests:>7,}"
+                f"{_percent(cache.request_hit_rate):>9}"
+                f"{_percent(cache.token_hit_rate):>9}"
                 f"  ({_requests(model.request_count)})"
             )
 

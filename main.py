@@ -18,6 +18,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from collectors.base import BaseCollector
 from collectors.registry import build_collectors
 from config.settings import Settings, get_settings
 from database.connection import create_database_engine, create_session_factory
@@ -43,31 +44,54 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     long as the user is waiting. The collector status endpoint reports `scanning`
     while it works. Shutdown sets the stop event and waits for the pass to
     finish, so no scan is abandoned halfway through.
-    """
-    if not app.state.settings.sync_enabled:
-        logger.info("automatic collection is disabled; use the rescan endpoint instead")
-        yield
-        return
 
-    scheduler = SyncScheduler(
-        build_sync_coordinator(app.state.collectors, app.state.settings),
-        app.state.session_factory,
-        app.state.settings.sync_interval_seconds,
-    )
-    app.state.sync_scheduler = scheduler
-    stop = asyncio.Event()
-    task = asyncio.create_task(scheduler.run_periodically(stop))
-    logger.info(
-        "collection started for %s every %.0f seconds",
-        scheduler.platforms,
-        scheduler.interval_seconds,
-    )
+    Collectors are closed only once that wait is done. A collector can be holding a
+    copy of its source database mid-read, so closing before the pass finishes would
+    pull the file out from under the scan that is still using it.
+    """
     try:
-        yield
+        if not app.state.settings.sync_enabled:
+            logger.info("automatic collection is disabled; use the rescan endpoint instead")
+            yield
+            return
+
+        scheduler = SyncScheduler(
+            build_sync_coordinator(app.state.collectors, app.state.settings),
+            app.state.session_factory,
+            app.state.settings.sync_interval_seconds,
+        )
+        app.state.sync_scheduler = scheduler
+        stop = asyncio.Event()
+        task = asyncio.create_task(scheduler.run_periodically(stop))
+        logger.info(
+            "collection started for %s every %.0f seconds",
+            scheduler.platforms,
+            scheduler.interval_seconds,
+        )
+        try:
+            yield
+        finally:
+            stop.set()
+            await task
+            logger.info("collection stopped")
     finally:
-        stop.set()
-        await task
-        logger.info("collection stopped")
+        _close_collectors(app.state.collectors)
+
+
+def _close_collectors(collectors: list[BaseCollector]) -> None:
+    """Close every collector, logging rather than raising so one cannot block the rest.
+
+    Closing is how a collector releases a copy of its source database. Leaving those
+    behind would fill the temp filesystem over a long-lived process's lifetime.
+    """
+    for collector in collectors:
+        name = getattr(collector, "platform", type(collector).__name__)
+        try:
+            collector.close()
+        except Exception as error:
+            # Shutdown must not be blocked by one collector, and reading its name must
+            # not be able to raise either, or the whole loop stops here.
+            logger.warning("could not close the %s collector: %s", name, error)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -101,6 +125,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health_router)
     app.include_router(usage_router)
     app.include_router(collector_router)
+
     app.include_router(dashboard_router)
 
     logger.info(

@@ -8,8 +8,13 @@ The write-ahead log case is the important one. OpenCode runs in WAL mode, so new
 messages are committed to `opencode.db-wal` and can leave the main file's size and
 modification time untouched. Fingerprinting only the main file would reuse a copy
 that was missing the very usage it was asked to find.
+
+The tests at the end cover giving the copy back, which is a correctness matter in its
+own right: a copy is the full size of the source, so copies that outlive their owner
+fill the temp filesystem long before anyone notices.
 """
 
+import gc
 import os
 import sqlite3
 import time
@@ -17,7 +22,13 @@ from pathlib import Path
 
 import pytest
 
-from collectors.opencode.snapshot import SnapshotCache, SourceState, snapshot_database
+from collectors.opencode.snapshot import (
+    SnapshotCache,
+    SourceState,
+    _process_is_running,
+    _sweep_abandoned_snapshots,
+    snapshot_database,
+)
 
 
 @pytest.fixture
@@ -163,3 +174,82 @@ def test_a_snapshot_is_a_faithful_copy(opencode_db: Path) -> None:
     assert integrity == "ok"
     assert sessions == 1
     cache.close()
+
+
+# --- giving the copy back ---
+
+
+def unused_pid() -> int:
+    """Return a pid that is not in use, standing in for a process that has died."""
+    for candidate in range(40000, 40200):
+        if not _process_is_running(candidate):
+            return candidate
+    raise AssertionError("could not find an unused pid to test with")
+
+
+def fake_cache_directory(root: Path, pid: int) -> Path:
+    """Create a directory named the way a snapshot copy is, owned by the given pid."""
+    directory = root / f"tokenly-opencode-cache-{pid}-fake"
+    directory.mkdir()
+    (directory / "opencode.db").write_bytes(b"not really a database")
+    return directory
+
+
+def test_a_dropped_cache_reclaims_its_copy_without_closing(opencode_db: Path) -> None:
+    # An owner that is simply forgotten must not strand a copy of the database.
+    cache = SnapshotCache()
+
+    with cache.snapshot(opencode_db) as snapshot_path:
+        directory = snapshot_path.parent
+        assert directory.is_dir()
+
+    del cache
+    gc.collect()
+
+    assert not directory.is_dir()
+
+
+def test_the_sweep_removes_a_copy_whose_owner_has_died(tmp_path: Path) -> None:
+    abandoned = fake_cache_directory(tmp_path, unused_pid())
+
+    removed = _sweep_abandoned_snapshots(tmp_path)
+
+    assert abandoned in removed
+    assert not abandoned.is_dir()
+
+
+def test_the_sweep_never_touches_a_copy_a_live_process_is_using(tmp_path: Path) -> None:
+    # Deleting a live copy would pull the database out from under a running scan, so
+    # the sweep has to be sure the owner is gone before it acts.
+    in_use = fake_cache_directory(tmp_path, os.getpid())
+
+    _sweep_abandoned_snapshots(tmp_path)
+
+    assert in_use.is_dir()
+
+
+def test_the_sweep_leaves_a_directory_that_names_no_owner(tmp_path: Path) -> None:
+    # A directory without a pid belongs to some other version of this code. Guessing
+    # at its owner is not worth the risk of deleting a live read.
+    unknown = tmp_path / "tokenly-opencode-cache-no-pid-here"
+    unknown.mkdir()
+
+    _sweep_abandoned_snapshots(tmp_path)
+
+    assert unknown.is_dir()
+
+
+def test_closing_a_collector_leaves_no_copy_behind(opencode_db: Path, tmp_path: Path) -> None:
+    # The end-to-end guarantee: closing the collector is enough, whatever the caller
+    # forgets to do afterwards.
+    from collectors.opencode import OpenCodeCollector
+    from config.settings import Settings
+
+    collector = OpenCodeCollector(Settings(opencode_data_dir=str(tmp_path)))
+    with collector._snapshots.snapshot(opencode_db) as snapshot_path:
+        directory = snapshot_path.parent
+        assert directory.is_dir()
+
+    collector.close()
+
+    assert not directory.is_dir()

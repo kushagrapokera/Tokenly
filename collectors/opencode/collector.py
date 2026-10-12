@@ -67,6 +67,15 @@ class OpenCodeCollector(BaseCollector):
         self._resolver.invalidate()
         self._snapshots.close()
 
+    def close(self) -> None:
+        """Delete the snapshot copy so it does not outlive this collector.
+
+        The copy is worth keeping between scans, which is why it is not deleted as
+        soon as a read finishes — but nothing should be holding a full copy of the
+        database once the collector is finished with. The next scan copies again.
+        """
+        self._snapshots.close()
+
     def discover(self) -> DiscoveryResult:
         """Report whether OpenCode data is readable here; never raise for 'not installed'."""
         database_path = self._resolver.database_path()

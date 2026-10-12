@@ -63,3 +63,17 @@ class BaseCollector(ABC):
         Collectors with nothing cached need do nothing.
         """
         return None
+
+    def close(self) -> None:
+        """Release anything this collector holds open once its owner is finished.
+
+        Called on shutdown, and by tests when they are done with a collector. A
+        collector that keeps a copy of its source — OpenCode copies the database so
+        it can read a WAL-mode file safely — deletes that copy here. Without this
+        hook such a copy survives until the process exits, which is long enough for
+        a test run to fill a small temp filesystem.
+
+        Closing is idempotent, and collectors holding no OS resources need do
+        nothing.
+        """
+        return None

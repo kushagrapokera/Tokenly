@@ -11,16 +11,30 @@ snapshot lives outside OpenCode's data directory so it is never mistaken for sou
 `SnapshotCache` keeps that copy between scans while the source is unchanged, which is
 worth ~172 ms per scan. Copying is what makes reading safe, so the decision to skip it
 is the one place a stale read could hide new usage — the fingerprint below is
-deliberately paranoid about that, and §A2 of `parallelism.md` records the trade-off.
+deliberately paranoid about that, and §A2 of `docs/parallelism.md` records the trade-off.
+
+That caching is also why this module is careful about giving the copy back. Each copy
+is the full size of the source database, so copies that outlive their owner would fill
+a temp filesystem: one collector per test adds up to gigabytes over a test run. Three
+things prevent that, and all three are needed because each covers a case the others miss:
+
+1. `close()` deletes the copy deterministically, so an owner that behaves leaves
+   nothing behind.
+2. A `weakref.finalize` deletes it when the cache is garbage collected, which covers an
+   owner that is simply dropped without being closed.
+3. `atexit` (which `weakref.finalize` registers by default) covers a clean exit, and the
+   pid in the directory name lets a later run sweep up after a process that died
+   without any of the above — a kill, a crash, or a power cut.
 """
 
 from __future__ import annotations
 
-import atexit
 import logging
+import os
 import sqlite3
 import tempfile
 import threading
+import weakref
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -32,11 +46,18 @@ logger = logging.getLogger(__name__)
 
 WAL_SUFFIX = "-wal"
 
+# The owning pid is part of the directory name so an abandoned copy can be identified
+# as abandoned. Without it, a killed process leaves a directory that no later run can
+# tell apart from one a live server is still reading from.
+CACHE_PREFIX = f"tokenly-opencode-cache-{os.getpid()}-"
+CACHE_PREFIX_PATTERN = "tokenly-opencode-cache-"
+SNAPSHOT_PREFIX = "tokenly-opencode-"
+
 
 @contextmanager
 def snapshot_database(source_path: Path) -> Iterator[Path]:
     """Yield a temporary, consistent copy of the OpenCode database, then delete it."""
-    temporary_directory = Path(tempfile.mkdtemp(prefix="tokenly-opencode-"))
+    temporary_directory = Path(tempfile.mkdtemp(prefix=SNAPSHOT_PREFIX))
     snapshot_path = temporary_directory / source_path.name
     try:
         _copy_database(source_path, snapshot_path)
@@ -85,13 +106,14 @@ class SnapshotCache:
     timestamps the scan actually read.
     """
 
-    def __init__(self, prefix: str = "tokenly-opencode-cache-") -> None:
+    def __init__(self, prefix: str = CACHE_PREFIX) -> None:
         self._prefix = prefix
         self._cached: _CachedSnapshot | None = None
         # Two requests can scan the same collector at once (the background scheduler
         # and a status view). Only one should be copying; readers of a shared snapshot
         # need no lock, since SQLite allows concurrent readers of one file.
         self._lock = threading.Lock()
+        _sweep_abandoned_snapshots()
 
     @contextmanager
     def snapshot(self, source_path: Path) -> Iterator[Path]:
@@ -131,12 +153,79 @@ class SnapshotCache:
         return self._cached
 
     def _copy_into_temporary_directory(self, source_path: Path) -> Path:
-        """Copy the source into a temp directory that is removed when the process ends."""
+        """Copy the source into a temp directory tied to this cache's lifetime.
+
+        The finalizer covers the three ways a copy can stop being wanted: an explicit
+        `close()`, the cache being garbage collected, and a normal interpreter exit
+        (which `weakref.finalize` registers for by default). It does not cover a kill
+        or a crash, which is what `_sweep_abandoned_snapshots` is for.
+        """
         temporary_directory = Path(tempfile.mkdtemp(prefix=self._prefix))
-        atexit.register(_remove_snapshot, temporary_directory)
+        weakref.finalize(self, _remove_snapshot, temporary_directory)
         snapshot_path = temporary_directory / source_path.name
         _copy_database(source_path, snapshot_path)
         return snapshot_path
+
+
+def _sweep_abandoned_snapshots(directory: Path | None = None) -> list[Path]:
+    """Delete cached copies left behind by processes that are no longer running.
+
+    Only directories naming a dead owner are removed, so a concurrently running
+    server's copy is never touched. A directory whose name carries no pid is left
+    alone too: it belongs to some other version of this code, and guessing at its
+    owner is not worth the risk of deleting a live read.
+
+    Returns the directories it removed, so a caller can report them.
+    """
+    root = Path(directory) if directory is not None else Path(tempfile.gettempdir())
+    removed: list[Path] = []
+    try:
+        candidates = list(root.glob(f"{CACHE_PREFIX_PATTERN}*"))
+    except OSError as error:
+        logger.warning("could not list %s for abandoned snapshots: %s", root, error)
+        return removed
+
+    for candidate in candidates:
+        owner = _owning_pid(candidate.name)
+        if owner is None or _process_is_running(owner):
+            continue
+        _remove_snapshot(candidate)
+        removed.append(candidate)
+
+    if removed:
+        logger.info("removed %d abandoned opencode snapshot(s) from earlier runs", len(removed))
+    return removed
+
+
+def _owning_pid(directory_name: str) -> int | None:
+    """Return the pid named in a cache directory, or None when it names no owner."""
+    if not directory_name.startswith(CACHE_PREFIX_PATTERN):
+        return None
+    remainder = directory_name[len(CACHE_PREFIX_PATTERN) :]
+    # The pid is followed by the separator mkdtemp appends before its random suffix.
+    digits, separator, _ = remainder.partition("-")
+    if not separator or not digits.isdigit():
+        return None
+    return int(digits)
+
+
+def _process_is_running(pid: int) -> bool:
+    """Report whether a pid is still alive.
+
+    Signal 0 performs the permission and existence checks without delivering
+    anything. A `PermissionError` means the process exists but belongs to someone
+    else, which still counts as running.
+    """
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError as error:
+        logger.warning("could not check whether pid %d is alive: %s", pid, error)
+        return True
+    return True
 
 
 def _wal_path(source_path: Path) -> Path:
