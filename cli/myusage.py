@@ -6,12 +6,13 @@ database), and `cli.reports` (the queries) — behind a numbered, cross-platform
 """
 
 import argparse
+from pathlib import Path
 
 from sqlalchemy.orm import Session, sessionmaker
 
 from aggregation.breakdown import ModelUsage
 from aggregation.summary import UsageSummary
-from cli import discovery, prompts, reports
+from cli import discovery, prompts, reports, tables
 from collectors.registry import build_collectors
 from database.connection import create_database_engine, create_session_factory
 from database.schema import ensure_schema
@@ -89,15 +90,20 @@ def _sync(settings, session_factory: sessionmaker[Session]) -> None:
 
 def _print_discovered(paths: discovery.DiscoveredPaths) -> None:
     """Show which data directory each platform resolved to."""
-    rows = [
+    print("\nConfigured from your system:")
+    found: list[tuple[str, Path | None]] = [
         ("Codex", paths.codex_home),
         ("Claude Code", paths.claude_data_dir),
         ("Cline", paths.cline_data_dir),
         ("OpenCode", paths.opencode_data_dir),
     ]
-    print("Configured from your system:")
-    for label, path in rows:
-        print(f"  {label:<12} {path if path else '(not found)'}")
+    tables.print_table(
+        [
+            tables.Column("Tool", right=False, priority=1),
+            tables.Column("Data directory", right=False, priority=1),
+        ],
+        [[name, str(path) if path else "(not found)"] for name, path in found],
+    )
 
 
 def _print_links() -> None:
@@ -126,8 +132,7 @@ def _model_flow(session: Session, timezone_name: str) -> None:
     if not models:
         print("No model usage recorded yet.")
         return
-    options = [(model, f"{model}  ({_requests(n)})") for model, n in models]
-    chosen = prompts.choose("\nPick a model:", options)
+    chosen = prompts.choose("\nPick a model:", _choice_options(models))
     if chosen is None:
         return
     print(f"\n{chosen}")
@@ -139,8 +144,7 @@ def _provider_flow(session: Session, timezone_name: str) -> None:
     if not providers:
         print("No provider usage recorded yet.")
         return
-    options = [(provider, f"{provider}  ({_requests(n)})") for provider, n in providers]
-    chosen = prompts.choose("\nPick a provider:", options)
+    chosen = prompts.choose("\nPick a provider:", _choice_options(providers))
     if chosen is None:
         return
     print(f"\nProvider: {chosen}")
@@ -159,48 +163,115 @@ def _percent(fraction: float | None) -> str:
     return "-" if fraction is None else f"{fraction * 100:.1f}%"
 
 
+def _choice_options(pairs: list[tuple[str, int]]) -> list[tuple[str, str]]:
+    """Build menu labels whose counts line up in a column.
+
+    Names are trimmed so the counts still align in a narrow terminal; the full name is
+    still what gets chosen and reported afterwards, so nothing is lost but the display.
+    """
+    budget = tables.terminal_width() - 24
+    tally_width = max(len(_requests(count)) for _, count in pairs)
+    name_width = max(len(name) for name, _ in pairs)
+    shown = max(12, min(name_width, budget - tally_width - 12))
+    return [
+        (name, f"{_short_name(name, shown)}  {_requests(count).rjust(tally_width)}")
+        for name, count in pairs
+    ]
+
+
+def _short_name(name: str, width: int) -> str:
+    """Trim a name to the menu's width, marking it so a cut name is never read as whole."""
+    if len(name) <= width:
+        return name.ljust(width)
+    return name[: width - 1] + tables.ELLIPSIS
+
+
+def _summary_columns() -> list[tables.Column]:
+    """Describe the window table, most important column first."""
+    return [
+        tables.Column("Window", right=False, priority=1),
+        tables.Column("Requests", priority=1),
+        tables.Column("Total", priority=1),
+        tables.Column("Input", priority=2),
+        tables.Column("Output", priority=2),
+        tables.Column("Consumption", priority=2),
+        tables.Column("HitRate", priority=3),
+        tables.Column("TokenHit", priority=3),
+        tables.Column("CacheRead", priority=4),
+        tables.Column("Hits", priority=4),
+        tables.Column("Misses", priority=4),
+        tables.Column("Unknown", priority=4),
+    ]
+
+
+def _summary_rows(rows: list[tuple[str, UsageSummary]]) -> list[list[str]]:
+    """Flatten summaries into the plain strings the table lays out."""
+    return [
+        [
+            label,
+            f"{summary.request_count:,}",
+            f"{summary.total_tokens:,}",
+            f"{summary.input_tokens:,}",
+            f"{summary.output_tokens:,}",
+            f"{summary.consumption_tokens:,}",
+            _percent(summary.cache.request_hit_rate),
+            _percent(summary.cache.token_hit_rate),
+            f"{summary.cache.cache_read_tokens:,}",
+            f"{summary.cache.cache_hit_requests:,}",
+            f"{summary.cache.cache_miss_requests:,}",
+            f"{summary.cache.cache_unknown_requests:,}",
+        ]
+        for label, summary in rows
+    ]
+
+
 def _print_summary_table(rows: list[tuple[str, UsageSummary]]) -> None:
-    header = (
-        f"  {'Window':<12}{'Requests':>9}{'Input':>13}"
-        f"{'Output':>11}{'Total':>15}{'Consumption':>15}"
-    )
-    cache_header = f"{'CacheRead':>15}{'Hit':>7}{'Miss':>7}{'Unk':>6}{'HitRate':>9}{'TokenHit':>10}"
-    print(header + cache_header)
-    for label, summary in rows:
-        cache = summary.cache
-        print(
-            f"  {label:<12}{summary.request_count:>9}"
-            f"{summary.input_tokens:>13,}{summary.output_tokens:>11,}"
-            f"{summary.total_tokens:>15,}{summary.consumption_tokens:>15,}"
-            f"{cache.cache_read_tokens:>15,}"
-            f"{cache.cache_hit_requests:>7,}{cache.cache_miss_requests:>7,}"
-            f"{cache.cache_unknown_requests:>6,}"
-            f"{_percent(cache.request_hit_rate):>9}"
-            f"{_percent(cache.token_hit_rate):>10}"
-        )
+    """Print one row per window, dropping the least important columns when space is short."""
+    if not rows:
+        print("(no usage in this range)")
+        return
+    tables.print_table(_summary_columns(), _summary_rows(rows))
+
+
+def _provider_columns() -> list[tables.Column]:
+    """Describe the per-provider model table, most important column first."""
+    return [
+        tables.Column("Model", right=False, priority=1),
+        tables.Column("Requests", priority=1),
+        tables.Column("Total", priority=1),
+        tables.Column("Consumption", priority=2),
+        tables.Column("HitRate", priority=3),
+        tables.Column("TokenHit", priority=3),
+        tables.Column("CacheRead", priority=4),
+        tables.Column("Hits", priority=4),
+        tables.Column("Misses", priority=4),
+    ]
 
 
 def _print_provider_report(rows: list[tuple[str, list[ModelUsage]]]) -> None:
-    header = (
-        f"    {'model':<30}{'total_tokens':>15}{'cache_read':>15}"
-        f"{'hit':>7}{'miss':>7}{'HitRate':>9}{'TokenHit':>9}"
-    )
+    """Print a table of models per provider, fitting whatever width is available."""
     for label, model_rows in rows:
-        print(f"\n  {label}:")
+        print(f"\n  {label}")
         if not model_rows:
             print("    (no usage)")
             continue
-        print(header)
-        for model in model_rows:
-            cache = model.cache
-            print(
-                f"    {model.model_id:<30}{model.total_tokens:>15,}"
-                f"{cache.cache_read_tokens:>15,}"
-                f"{cache.cache_hit_requests:>7,}{cache.cache_miss_requests:>7,}"
-                f"{_percent(cache.request_hit_rate):>9}"
-                f"{_percent(cache.token_hit_rate):>9}"
-                f"  ({_requests(model.request_count)})"
-            )
+        tables.print_table(
+            _provider_columns(),
+            [
+                [
+                    model.model_id,
+                    f"{model.request_count:,}",
+                    f"{model.total_tokens:,}",
+                    f"{model.consumption_tokens:,}",
+                    _percent(model.cache.request_hit_rate),
+                    _percent(model.cache.token_hit_rate),
+                    f"{model.cache.cache_read_tokens:,}",
+                    f"{model.cache.cache_hit_requests:,}",
+                    f"{model.cache.cache_miss_requests:,}",
+                ]
+                for model in model_rows
+            ],
+        )
 
 
 if __name__ == "__main__":
