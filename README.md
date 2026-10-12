@@ -220,18 +220,3 @@ One folder per concern.
 The project rules live in `AGENTS.md`; it is kept per machine rather than in the repo.
 
 ---
-
-## Privacy
-
-Tokenly reads files that are already on your disk and writes only to its own database.
-It opens every assistant store with SQLite's read-only mode, so the tools themselves
-cannot be modified by it.
-
-It makes no network requests of its own. The one subprocess it starts is
-`opencode debug paths`, a local command, used once to find where OpenCode keeps its
-data. The API binds to loopback and refuses cross-origin requests unless you explicitly
-allow an origin.
-
-## License
-
-No licence file is published yet. Treat the repository as private until one is added.
