@@ -3,7 +3,7 @@
 Unlike Claude Code, Codex records a first-class provider id, so attribution is
 driven by that metadata rather than guessed from a model's name. The order below
 mirrors `docs/codex_storage_analysis.md` §5.3 and the Phase 7 requirements
-(`implementation.md`):
+(`docs/implementation.md`):
 
 1. **`session_meta.model_provider`** — authoritative when present. Folded onto the
    canonical provider id via the shared alias map; an unrecognized value is

@@ -38,13 +38,14 @@ These rules apply to every prompt and every file in this project.
   logging_setup/, not logging
 
 ## Performance work
-- Read [`LESSONS.md`](LESSONS.md) before optimizing anything. The short
-  version: profile first, separate fixed per-run cost from variable cost, and
-  confirm the change targets the largest number in the table. Parallelism is
+- Read [`docs/LESSONS.md`](docs/LESSONS.md) before optimizing anything. The
+  short version: profile first, separate fixed per-run cost from variable cost,
+  and confirm the change targets the largest number in the table. Parallelism is
   rarely the answer — on this project it was worth 43 ms, while deleting
   redundant work was worth 742 ms.
 - Never quote a performance figure that was not measured. Numbers in
-  `parallelism.md` are labelled measured or projected; keep it that way.
+  [`docs/parallelism.md`](docs/parallelism.md) are labelled measured or
+  projected; keep it that way.
 
 ## Clean Code skills (installed for this project)
 `.claude/skills/` holds 16 code-quality checkers derived from *Clean Code*

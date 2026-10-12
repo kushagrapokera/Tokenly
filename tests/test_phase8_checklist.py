@@ -16,7 +16,7 @@ that were implied rather than stated:
   produces identical results from both, which is the actual claim.
 
 Every other item on the Phase 8 checklist is already covered; §11 of
-`implementation.md` points at where.
+`docs/implementation.md` points at where.
 
 OpenCode and Cline store tokens differently on disk, so these tests deliberately
 build each platform's own shape and compare what comes out.

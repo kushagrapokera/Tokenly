@@ -62,7 +62,7 @@ SKIP_DIR_NAMES = frozenset(
     }
 )
 
-# Bounds that keep the search fast and predictable (see cli-plan.md §7).
+# Bounds that keep the search fast and predictable (see docs/cli-plan.md §7).
 MAX_DEPTH = 6
 MAX_VISITED = 20_000
 BUDGET_SECONDS = 4.0

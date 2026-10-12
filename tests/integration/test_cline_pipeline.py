@@ -1,4 +1,4 @@
-"""Cline usage passing through the shared pipeline (implementation.md Phase 3).
+"""Cline usage passing through the shared pipeline (docs/implementation.md Phase 3).
 
 Phase 3 asks for one thing above all: Cline records travel the same route as
 OpenCode's — the same normalization, deduplication, persistence, and
