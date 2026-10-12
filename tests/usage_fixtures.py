@@ -26,6 +26,9 @@ def make_record(
     input_tokens: int | None = 100,
     output_tokens: int | None = 20,
     consumption_tokens: int | None = 120,
+    cache_read_tokens: int | None = 0,
+    cache_write_tokens: int | None = 0,
+    cache_overlap: str = "additive",
     session_id: str = "ses_1",
 ) -> UsageRecord:
     """One normalized record standing in for a stored model call."""
@@ -42,6 +45,9 @@ def make_record(
         output_tokens=output_tokens,
         total_tokens=total,
         consumption_tokens=consumption_tokens,
+        cache_read_tokens=cache_read_tokens,
+        cache_write_tokens=cache_write_tokens,
+        cache_overlap=cache_overlap,
         usage_status="reported",
     )
 
@@ -59,9 +65,13 @@ def body(response: httpx.Response) -> dict[str, Any]:
     return payload
 
 
-def totals_of(response: httpx.Response) -> dict[str, int]:
-    """Return the token totals from a summary or timeline response."""
-    totals: dict[str, int] = body(response)["totals"]
+def totals_of(response: httpx.Response) -> dict[str, Any]:
+    """Return the token totals from a summary or timeline response.
+
+    The whole block is returned, nested `cache` figures included, so a test asserting
+    equality on this checks the complete totals contract rather than part of it.
+    """
+    totals: dict[str, Any] = body(response)["totals"]
     return totals
 
 

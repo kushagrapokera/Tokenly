@@ -28,6 +28,11 @@ from typing import Literal
 CacheOverlap = Literal["additive", "subset_of_input"]
 ReasoningOverlap = Literal["additive", "subset_of_output"]
 
+# The two `cache_overlap` values, named so callers never compare against a bare string
+# literal. `aggregation.cache` branches on SUBSET_OF_INPUT to pick its denominator.
+ADDITIVE_CACHE: CacheOverlap = "additive"
+SUBSET_OF_INPUT: CacheOverlap = "subset_of_input"
+
 
 @dataclass(frozen=True)
 class CategoryRelationships:

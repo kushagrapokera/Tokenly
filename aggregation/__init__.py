@@ -8,6 +8,7 @@ sums, and incomplete coverage is reported alongside the totals, never hidden.
 """
 
 from aggregation.breakdown import ModelUsage, breakdown_by_model
+from aggregation.cache import CacheMetrics
 from aggregation.filters import UsageFilter, filter_conditions
 from aggregation.ranges import (
     DEFAULT_RANGE,
@@ -34,6 +35,7 @@ from aggregation.windows import (
 __all__ = [
     "DEFAULT_RANGE",
     "RANGE_NAMES",
+    "CacheMetrics",
     "ModelUsage",
     "NamedRange",
     "TimeBucket",

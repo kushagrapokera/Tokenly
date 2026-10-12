@@ -25,14 +25,26 @@ def usage_app(app: FastAPI) -> FastAPI:
     """An app holding a known set of records spread across days, months, and models.
 
     The five records give every dimension something to distinguish: two providers, two
-    models, three months of history, and one record whose totals were never reported.
+    models, three months of history, one record whose totals were never reported, and
+    cache reads on two of the three `example-model` rows so the cache rates are non-zero.
     """
     seed(
         app,
         [
-            make_record("msg_1", BASE_MOMENT, input_tokens=100, output_tokens=10),
             make_record(
-                "msg_2", BASE_MOMENT - timedelta(hours=2), input_tokens=50, output_tokens=5
+                "msg_1",
+                BASE_MOMENT,
+                input_tokens=100,
+                output_tokens=10,
+                cache_read_tokens=60,
+            ),
+            make_record(
+                "msg_2",
+                BASE_MOMENT - timedelta(hours=2),
+                input_tokens=50,
+                output_tokens=5,
+                cache_read_tokens=40,
+                cache_write_tokens=5,
             ),
             make_record(
                 "msg_3", BASE_MOMENT - timedelta(days=3), input_tokens=200, output_tokens=20
@@ -53,6 +65,7 @@ def usage_app(app: FastAPI) -> FastAPI:
                 input_tokens=None,
                 output_tokens=None,
                 consumption_tokens=None,
+                cache_read_tokens=None,
             ),
         ],
     )
@@ -78,12 +91,26 @@ def test_summary_returns_the_totals_of_the_requested_range(usage_client: TestCli
 
     assert response.status_code == 200
     # Four records reported tokens summing to 395; the fifth reported none at all, so it
-    # adds nothing to any total but is still counted as a request.
+    # adds nothing to any total but is still counted as a request. Two of the four known
+    # rows read from cache and two reported zero, so the hit rate is 2/4 — the unknown row
+    # is counted as neither. These providers count cache reads outside input_tokens, so
+    # the prompt denominator is 357 input plus the 100 cached tokens.
     assert totals_of(response) == {
         "input_tokens": 357,
         "output_tokens": 38,
         "total_tokens": 395,
         "consumption_tokens": 480,
+        "cache": {
+            "cache_read_tokens": 100,
+            "cache_write_tokens": 5,
+            "cache_hit_requests": 2,
+            "cache_miss_requests": 2,
+            "cache_unknown_requests": 1,
+            "cache_known_requests": 4,
+            "cache_prompt_tokens": 457,
+            "request_hit_rate": 2 / 4,
+            "token_hit_rate": 100 / 457,
+        },
     }
 
 
@@ -314,6 +341,63 @@ def test_models_of_an_empty_database_return_an_empty_list(empty_client: TestClie
 
     assert response.status_code == 200
     assert body(response)["models"] == []
+
+
+def test_every_usage_endpoint_reports_cache_effectiveness(usage_client: TestClient) -> None:
+    """Cache figures reach the wire on every totals-bearing endpoint, not just one.
+
+    Each response nests its totals differently — summary has one at the top level, the
+    timeline has one per bucket, and models one per row. All three shapes have to expose
+    the same cache fields, or a client has to special-case which endpoint it is reading.
+    """
+    expected = {
+        "cache_read_tokens",
+        "cache_write_tokens",
+        "cache_hit_requests",
+        "cache_miss_requests",
+        "cache_unknown_requests",
+        "cache_known_requests",
+        "cache_prompt_tokens",
+        "request_hit_rate",
+        "token_hit_rate",
+    }
+    assert set(totals_of(usage_client.get("/api/usage/summary"))["cache"]) == expected
+
+    daily = body(usage_client.get("/api/usage/daily"))
+    assert daily["buckets"], "the daily timeline returned no buckets to check"
+    for bucket in daily["buckets"]:
+        assert set(bucket["totals"]["cache"]) == expected, bucket["label"]
+
+    for model in body(usage_client.get("/api/usage/models"))["models"]:
+        assert set(model["totals"]["cache"]) == expected, model["model_id"]
+
+
+def test_models_report_cache_per_model_and_provider(usage_client: TestClient) -> None:
+    response = usage_client.get("/api/usage/models", params={"range": "all_time"})
+
+    cache = {
+        (model["provider_id"], model["model_id"]): model["totals"]["cache"]
+        for model in body(response)["models"]
+    }
+    hit = cache[("openrouter", "example-model")]
+    assert hit["cache_read_tokens"] == 100
+    assert hit["cache_hit_requests"] == 2
+    assert hit["cache_write_tokens"] == 5
+    # Additive: the prompt denominator is each row's input plus its own cached tokens,
+    # so 160 + 90 + 200 across the three rows.
+    assert hit["cache_prompt_tokens"] == 450
+    assert hit["request_hit_rate"] == 2 / 3
+    assert hit["token_hit_rate"] == 100 / 450
+
+
+def test_cache_rates_are_null_without_data(empty_client: TestClient) -> None:
+    """An empty range reports absent rates, so a client cannot read 0% as a real answer."""
+    response = empty_client.get("/api/usage/summary", params={"range": "all_time"})
+
+    cache = totals_of(response)["cache"]
+    assert cache["request_hit_rate"] is None
+    assert cache["token_hit_rate"] is None
+    assert cache["cache_read_tokens"] == 0
 
 
 def test_every_usage_endpoint_returns_the_same_envelope(usage_client: TestClient) -> None:

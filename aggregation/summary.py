@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from aggregation.cache import CacheMetrics, cache_group_columns, metrics_from_grouped_row
 from aggregation.filters import UsageFilter, filter_conditions
 from aggregation.windows import TimeWindow
 from database.models import UsageEvent
@@ -32,6 +33,7 @@ class UsageSummary:
     consumption_tokens: int
     known_total_events: int
     unknown_total_events: int
+    cache: CacheMetrics = CacheMetrics()
 
 
 def summarize_range(
@@ -47,6 +49,7 @@ def summarize_range(
         func.coalesce(func.sum(UsageEvent.consumption_tokens), 0).label("consumption_tokens"),
         func.count(UsageEvent.total_tokens).label("known_total_events"),
         (func.count() - func.count(UsageEvent.total_tokens)).label("unknown_total_events"),
+        *cache_group_columns(),
     )
     conditions = filter_conditions(active)
     if window.start is not None:
@@ -66,6 +69,7 @@ def summarize_range(
         consumption_tokens=int(row.consumption_tokens),
         known_total_events=int(row.known_total_events),
         unknown_total_events=int(row.unknown_total_events),
+        cache=metrics_from_grouped_row(row, int(row.request_count)),
     )
     logger.info(
         "summarized window %s: %d requests, %d total tokens (%d unknown)",

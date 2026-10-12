@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from aggregation.cache import CacheMetrics, cache_group_columns, metrics_from_grouped_row
 from aggregation.filters import UsageFilter, filter_conditions
 from aggregation.windows import TimeWindow
 from database.models import UsageEvent
@@ -38,6 +39,7 @@ class ModelUsage:
     total_tokens: int
     consumption_tokens: int
     unknown_total_events: int
+    cache: CacheMetrics = CacheMetrics()
 
 
 def breakdown_by_model(
@@ -56,6 +58,7 @@ def breakdown_by_model(
             func.coalesce(func.sum(UsageEvent.total_tokens), 0).label("total_tokens"),
             func.coalesce(func.sum(UsageEvent.consumption_tokens), 0).label("consumption_tokens"),
             (func.count() - func.count(UsageEvent.total_tokens)).label("unknown_total_events"),
+            *cache_group_columns(),
         )
         .group_by(UsageEvent.platform, UsageEvent.provider_id, UsageEvent.model_id)
         .order_by(
@@ -84,6 +87,7 @@ def breakdown_by_model(
             total_tokens=int(row.total_tokens),
             consumption_tokens=int(row.consumption_tokens),
             unknown_total_events=int(row.unknown_total_events),
+            cache=metrics_from_grouped_row(row, int(row.request_count)),
         )
         for row in rows
     ]

@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 
 from aggregation.breakdown import ModelUsage
+from aggregation.cache import CacheMetrics
 from aggregation.filters import UsageFilter
 from aggregation.ranges import DEFAULT_RANGE
 from aggregation.summary import UsageSummary
@@ -70,6 +71,52 @@ class CompletenessInfo(BaseModel):
     is_complete: bool
 
 
+class CacheTotals(BaseModel):
+    """Cache activity for one interval, with both effectiveness rates.
+
+    The two rates answer different questions and are not interchangeable:
+    `request_hit_rate` is how often the cache fired, while `token_hit_rate` is how much of
+    the prompt actually came from it. Both are `None` rather than `0` when there is no
+    data to divide by, so a client shows "no data" instead of a real-looking zero percent.
+
+    Requests are split three ways, not two. `cache_miss_requests` counts responses that
+    reported zero cached tokens; `cache_unknown_requests` counts those whose source never
+    reported cache data at all. Collapsing the second into the first would make a provider
+    that stopped reporting look like one whose cache stopped working, so the rates divide
+    by known requests only.
+
+    `cache_prompt_tokens` is the overlap-aware denominator `token_hit_rate` uses. For
+    additive providers it counts `input + cache_read`; for `subset_of_input` providers the
+    cached tokens are already inside `input`, so adding them again would double-count. It
+    is exposed so a client can show the fraction's basis, not just the percentage.
+    """
+
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    cache_hit_requests: int = 0
+    cache_miss_requests: int = 0
+    cache_unknown_requests: int = 0
+    cache_known_requests: int = 0
+    cache_prompt_tokens: int = 0
+    request_hit_rate: float | None = None
+    token_hit_rate: float | None = None
+
+    @classmethod
+    def from_metrics(cls, cache: CacheMetrics) -> CacheTotals:
+        """Convert aggregation cache metrics into their wire shape."""
+        return cls(
+            cache_read_tokens=cache.cache_read_tokens,
+            cache_write_tokens=cache.cache_write_tokens,
+            cache_hit_requests=cache.cache_hit_requests,
+            cache_miss_requests=cache.cache_miss_requests,
+            cache_unknown_requests=cache.cache_unknown_requests,
+            cache_known_requests=cache.cache_known_requests,
+            cache_prompt_tokens=cache.cache_prompt_tokens,
+            request_hit_rate=cache.request_hit_rate,
+            token_hit_rate=cache.token_hit_rate,
+        )
+
+
 class UsageTotals(BaseModel):
     """Token totals for one interval."""
 
@@ -77,6 +124,7 @@ class UsageTotals(BaseModel):
     output_tokens: int
     total_tokens: int
     consumption_tokens: int
+    cache: CacheTotals = CacheTotals()
 
 
 class SummaryResponse(BaseModel):
@@ -105,6 +153,7 @@ class SummaryResponse(BaseModel):
                 output_tokens=summary.output_tokens,
                 total_tokens=summary.total_tokens,
                 consumption_tokens=summary.consumption_tokens,
+                cache=CacheTotals.from_metrics(summary.cache),
             ),
             completeness=CompletenessInfo(
                 request_count=summary.request_count,
@@ -197,6 +246,7 @@ class TimelineResponse(BaseModel):
                         output_tokens=bucket.output_tokens,
                         total_tokens=bucket.total_tokens,
                         consumption_tokens=bucket.consumption_tokens,
+                        cache=CacheTotals.from_metrics(bucket.cache),
                     ),
                 )
                 for bucket in buckets
@@ -227,6 +277,7 @@ def _model_usage(model: ModelUsage) -> ModelUsageResponse:
             output_tokens=model.output_tokens,
             total_tokens=model.total_tokens,
             consumption_tokens=model.consumption_tokens,
+            cache=CacheTotals.from_metrics(model.cache),
         ),
         unknown_total_events=model.unknown_total_events,
     )
@@ -234,6 +285,7 @@ def _model_usage(model: ModelUsage) -> ModelUsageResponse:
 
 __all__ = [
     "AppliedFilters",
+    "CacheTotals",
     "CompletenessInfo",
     "Granularity",
     "ModelBreakdownResponse",

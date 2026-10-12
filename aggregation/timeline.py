@@ -15,6 +15,11 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import Row, select
 from sqlalchemy.orm import Session
 
+from aggregation.cache import (
+    CACHE_ROW_COLUMNS,
+    CacheMetrics,
+    metrics_from_usage_row,
+)
 from aggregation.filters import UsageFilter, filter_conditions
 from aggregation.windows import TimeWindow, as_utc, resolve_timezone
 from database.models import UsageEvent
@@ -37,6 +42,7 @@ class TimeBucket:
     output_tokens: int
     total_tokens: int
     consumption_tokens: int
+    cache: CacheMetrics = CacheMetrics()
 
 
 @dataclass
@@ -48,6 +54,12 @@ class _RunningTotals:
     output_tokens: int = 0
     total_tokens: int = 0
     consumption_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    cache_hit_requests: int = 0
+    cache_miss_requests: int = 0
+    cache_unknown_requests: int = 0
+    cache_prompt_tokens: int = 0
 
     def add(self, row: Row[tuple[Any, ...]]) -> None:
         """Fold one usage row's tokens into these totals."""
@@ -56,6 +68,13 @@ class _RunningTotals:
         self.output_tokens += row.output_tokens or 0
         self.total_tokens += row.total_tokens or 0
         self.consumption_tokens += row.consumption_tokens or 0
+        cache = metrics_from_usage_row(row)
+        self.cache_read_tokens += cache.cache_read_tokens
+        self.cache_write_tokens += cache.cache_write_tokens
+        self.cache_hit_requests += cache.cache_hit_requests
+        self.cache_miss_requests += cache.cache_miss_requests
+        self.cache_unknown_requests += cache.cache_unknown_requests
+        self.cache_prompt_tokens += cache.cache_prompt_tokens
 
     def freeze(self, edge: datetime, label: str) -> TimeBucket:
         """Render these totals as one immutable bucket."""
@@ -67,6 +86,15 @@ class _RunningTotals:
             output_tokens=self.output_tokens,
             total_tokens=self.total_tokens,
             consumption_tokens=self.consumption_tokens,
+            cache=CacheMetrics(
+                cache_read_tokens=self.cache_read_tokens,
+                cache_write_tokens=self.cache_write_tokens,
+                cache_hit_requests=self.cache_hit_requests,
+                cache_miss_requests=self.cache_miss_requests,
+                cache_unknown_requests=self.cache_unknown_requests,
+                cache_prompt_tokens=self.cache_prompt_tokens,
+                request_count=self.request_count,
+            ),
         )
 
 
@@ -115,6 +143,7 @@ def _fetch_window_rows(
         UsageEvent.output_tokens,
         UsageEvent.total_tokens,
         UsageEvent.consumption_tokens,
+        *CACHE_ROW_COLUMNS,
     )
     conditions = filter_conditions(filters or UsageFilter())
     conditions.append(UsageEvent.timestamp >= window.start)
